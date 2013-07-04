@@ -30,17 +30,20 @@
 #include <linux/gpio.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
+#include <linux/clk.h>
 #include <linux/pinctrl/machine.h>
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinctrl.h>
 #include <linux/pinctrl/pinmux.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/irqchip/chained_irq.h>
-#include <linux/clk-provider.h>
 #include <dt-bindings/pinctrl/rockchip.h>
 
 #include "core.h"
 #include "pinconf.h"
+
+#define GPIODBG	printk
+
 
 /* GPIO control registers */
 #define GPIO_SWPORT_DR		0x00
@@ -55,6 +58,10 @@
 #define GPIO_PORTS_EOI		0x4c
 #define GPIO_EXT_PORT		0x50
 #define GPIO_LS_SYNC		0x60
+
+/* RK3188 specific GPIO control register offsets */
+#define PMU_GPIO0A_PULL		0x64
+#define GRF_GPIO0B_PULL         0x0164
 
 /**
  * @reg_base: register base of the gpio bank
@@ -97,10 +104,6 @@ struct rockchip_pin_bank {
 		.name		= label,		\
 	}
 
-/**
- * @pull_auto: some SoCs don't allow pulls to be specified as up or down, but
- *	       instead decide this automatically based on the pad-type.
- */
 struct rockchip_pin_ctrl {
 	struct rockchip_pin_bank	*pin_banks;
 	u32				nr_banks;
@@ -108,8 +111,8 @@ struct rockchip_pin_ctrl {
 	char				*label;
 	int				mux_offset;
 	int				pull_offset;
-	bool				pull_auto;
 	int				pull_bank_stride;
+	const struct pinconf_ops	*pin_config_ops;
 };
 
 struct rockchip_pin_config {
@@ -364,6 +367,8 @@ static void rockchip_set_mux(struct rockchip_pin_bank *bank, int pin, int mux)
 	spin_unlock_irqrestore(&bank->slock, flags);
 }
 
+#if 0 /* ############### JUST FOR REFERNCE ####################### */
+
 static int rockchip_get_pull(struct rockchip_pin_bank *bank, int pin_num)
 {
 	struct rockchip_pinctrl *info = bank->drvdata;
@@ -386,61 +391,38 @@ static int rockchip_get_pull(struct rockchip_pin_bank *bank, int pin_num)
 				? PIN_CONFIG_BIAS_PULL_PIN_DEFAULT
 				: PIN_CONFIG_BIAS_DISABLE;
 	} else {
-		dev_err(info->dev, "pull support for rk31xx not implemented\n");
-		return -EIO;
+/*
+ * 	*
+	 * pull setting
+	 * 2'b00: Z (Noraml operation)
+	 * 2'b01: weak 1(pull-up)
+	 * 2'b10: weak 0(pull-down)
+	 * 2'b11: Repeater(Bus keeper)
+	 *
+ *
+		if (bank->bank_num == 0 && offset < 12) {
+			base = RK30_PMU_BASE + PMU_GPIO0A_PULL + ((offset / 8) * 4);
+			offset = (offset % 8) * 2;
+			__raw_writel((0x3 << (16 + offset)) | (val << offset), base);
+		} else {
+			base = RK30_GRF_BASE + GRF_GPIO0B_PULL - 4 + bank->id * 16 + ((offset / 8) * 4);
+			offset = (7 - (offset % 8)) * 2;
+			__raw_writel((0x3 << (16 + offset)) | (val << offset), base);
+*/
+		switch( ) {
+		case 0:
+			return PIN_CONFIG_BIAS_DISABLE;
+		case 1:
+			return PIN_CONFIG_BIAS_PULL_UP;
+		case 2:
+			return PIN_CONFIG_BIAS_PULL_DOWN;
+		case 3:
+			return PIN_CONFIG_BIAS_BUS_HOLD;
+		}
 	}
 }
 
-static int rockchip_set_pull(struct rockchip_pin_bank *bank,
-					int pin_num, int pull)
-{
-	struct rockchip_pinctrl *info = bank->drvdata;
-	struct rockchip_pin_ctrl *ctrl = info->ctrl;
-	void __iomem *reg;
-	unsigned long flags;
-	u8 bit;
-	u32 data;
-
-	dev_dbg(info->dev, "setting pull of GPIO%d-%d to %d\n",
-		 bank->bank_num, pin_num, pull);
-
-	/* rk3066b does support any pulls */
-	if (!ctrl->pull_offset)
-		return pull ? -EINVAL : 0;
-
-	reg = info->reg_base + ctrl->pull_offset;
-
-	if (ctrl->pull_auto) {
-		if (pull != PIN_CONFIG_BIAS_PULL_PIN_DEFAULT &&
-					pull != PIN_CONFIG_BIAS_DISABLE) {
-			dev_err(info->dev, "only PIN_DEFAULT and DISABLE allowed\n");
-			return -EINVAL;
-		}
-
-		reg += bank->bank_num * ctrl->pull_bank_stride;
-		reg += (pin_num / 16) * 4;
-		bit = pin_num % 16;
-
-		spin_lock_irqsave(&bank->slock, flags);
-
-		data = BIT(bit + 16);
-		if (pull == PIN_CONFIG_BIAS_DISABLE)
-			data |= BIT(bit);
-		writel(data, reg);
-
-		spin_unlock_irqrestore(&bank->slock, flags);
-	} else {
-		if (pull == PIN_CONFIG_BIAS_PULL_PIN_DEFAULT) {
-			dev_err(info->dev, "pull direction (up/down) needs to be specified\n");
-			return -EINVAL;
-		}
-
-		dev_err(info->dev, "pull support for rk31xx not implemented\n");
-		return -EIO;
-	}
-
-	return 0;
-}
+#endif /* ############### JUST FOR REFERNCE ####################### */
 
 /*
  * Pinmux_ops handling
@@ -563,56 +545,250 @@ static const struct pinmux_ops rockchip_pmx_ops = {
  * Pinconf_ops handling
  */
 
-static bool rockchip_pinconf_pull_valid(struct rockchip_pin_ctrl *ctrl,
-					enum pin_config_param pull)
+
+/* Some SOCs like RK3066b do not support any kind of push or pull
+ * configuration on their GPIO pins.
+ */
+static int rockchip_pinconf_set_none(struct pinctrl_dev *pctldev, 
+						unsigned int pin, 
+						unsigned long config)
 {
-	/* rk3066b does support any pulls */
-	if (!ctrl->pull_offset)
-		return pull ? false : true;
+	enum pin_config_param param = pinconf_to_config_param(config);
 
-	if (ctrl->pull_auto) {
-		if (pull != PIN_CONFIG_BIAS_PULL_PIN_DEFAULT &&
-					pull != PIN_CONFIG_BIAS_DISABLE)
-			return false;
-	} else {
-		if (pull == PIN_CONFIG_BIAS_PULL_PIN_DEFAULT)
-			return false;
-	}
-
-	return true;
+	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, config);
+	
+	if (param == PIN_CONFIG_BIAS_DISABLE)
+		return 0;
+	/* TODO: RK3066b does support PIN_CONFIG_INPUT_DEBOUNCE */
+	return -ENOTSUPP;
 }
 
-/* set the pin config settings for a specified pin */
-static int rockchip_pinconf_set(struct pinctrl_dev *pctldev, unsigned int pin,
-							unsigned long config)
+static int rockchip_pinconf_get_none(struct pinctrl_dev *pctldev, 
+						unsigned int pin,
+						unsigned long *config)
+{
+	enum pin_config_param param = pinconf_to_config_param(*config);
+
+	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, *config);
+
+	/* TODO: RK3066b does support PIN_CONFIG_INPUT_DEBOUNCE */
+	*config = 0;
+
+	if (param == PIN_CONFIG_BIAS_DISABLE) {
+		return 0;
+	}
+	return -ENOTSUPP;
+}
+
+/* Some SOCs like RK3066a do support pull-up or pull-down, but
+ * configuration can only enable or disable the option. The direction
+ * the pin is pulled, is decided by the SOC automatically.
+ */
+static int rockchip_pinconf_set_auto(struct pinctrl_dev *pctldev,
+						unsigned int pin, 
+						unsigned long config)
+{
+	struct rockchip_pinctrl *info = pinctrl_dev_get_drvdata(pctldev);
+	struct rockchip_pin_ctrl *ctrl = info->ctrl;
+	struct rockchip_pin_bank *bank = pin_to_bank(info, pin);
+	enum pin_config_param param = pinconf_to_config_param(config);
+	u32 pin_num = pin - bank->pin_base;
+	void __iomem *reg;
+	unsigned long flags;
+	u8 bit;
+	u32 data;
+
+	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, config);
+
+	dev_dbg(info->dev, "setting pull of GPIO%d-%d to %d\n",
+		 bank->bank_num, pin_num, param);
+
+	if (param != PIN_CONFIG_BIAS_DISABLE
+			&& param != PIN_CONFIG_BIAS_PULL_PIN_DEFAULT) {
+		dev_err(info->dev, "only PIN_DEFAULT and DISABLE allowed\n");
+		return -ENOTSUPP;
+	}
+	
+	reg = info->reg_base + ctrl->pull_offset;
+
+	reg += bank->bank_num * ctrl->pull_bank_stride;
+	reg += (pin_num / 16) * 4;
+	bit = pin_num % 16;
+
+	spin_lock_irqsave(&bank->slock, flags);
+
+	data = BIT(bit + 16);
+	if (param == PIN_CONFIG_BIAS_DISABLE)
+		data |= BIT(bit);
+	writel(data, reg);
+
+	spin_unlock_irqrestore(&bank->slock, flags);
+	
+	return 0;
+}
+
+static int rockchip_pinconf_get_auto(struct pinctrl_dev *pctldev,
+						unsigned int pin, 
+						unsigned long *config)
+{
+	struct rockchip_pinctrl *info = pinctrl_dev_get_drvdata(pctldev);
+	struct rockchip_pin_ctrl *ctrl = info->ctrl;
+	struct rockchip_pin_bank *bank = pin_to_bank(info, pin);
+	enum pin_config_param param = pinconf_to_config_param(*config);
+	enum pin_config_param data;
+	unsigned long pin_num = pin - bank->pin_base;
+	void __iomem *reg;
+	u8 bit;
+
+	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, *config);
+
+	if (param != PIN_CONFIG_BIAS_DISABLE
+			&& param != PIN_CONFIG_BIAS_PULL_PIN_DEFAULT) {
+		dev_err(info->dev, "only PIN_DEFAULT and DISABLE allowed\n");
+		return -ENOTSUPP;
+	}
+
+	reg = info->reg_base + ctrl->pull_offset;
+
+	reg += bank->bank_num * ctrl->pull_bank_stride;
+	reg += (pin_num / 16) * 4;
+	bit = pin_num % 16;
+
+	data = (readl( reg) & BIT(bit))?
+		PIN_CONFIG_BIAS_DISABLE : PIN_CONFIG_BIAS_PULL_PIN_DEFAULT;
+	
+	*config = (data)? 1 : 0;
+
+	if (param == data)
+		return 0;
+
+	return -EINVAL;
+}
+
+/* Some SOCs like RK3188 do support multiple configuration options
+ * that can be set as needed by the software.
+ */
+static int rockchip_pinconf_set_multi(struct pinctrl_dev *pctldev,
+						unsigned int pin, 
+						unsigned long config)
 {
 	struct rockchip_pinctrl *info = pinctrl_dev_get_drvdata(pctldev);
 	struct rockchip_pin_bank *bank = pin_to_bank(info, pin);
 	enum pin_config_param param = pinconf_to_config_param(config);
-	u16 arg = pinconf_to_config_argument(config);
+	u32 pin_num = pin - bank->pin_base;
+	void __iomem *reg;
+	unsigned long flags;
+	u32 data, mask;
+	u8 bits;
 
+	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, config);
+
+	dev_dbg(info->dev, "setting pull of GPIO%d-%d to %d\n",
+		 bank->bank_num, pin_num, param);
+
+	 /* The lower word in the register selects the configuration of
+	  * the GPIO by 2 bits for each pin. The upper word selects, which 
+	  * pin is actually enabled for writing a new configuration. 
+	  * To save some bit shifting we preset the lower word for all of
+	  * the pins and only calculate the mask in the upper word.
+	  */
 	switch (param) {
 	case PIN_CONFIG_BIAS_DISABLE:
-		return rockchip_set_pull(bank, pin - bank->pin_base, param);
+		data = 0;
 		break;
 	case PIN_CONFIG_BIAS_PULL_UP:
+		data = 0x5555;
+		break;
 	case PIN_CONFIG_BIAS_PULL_DOWN:
-	case PIN_CONFIG_BIAS_PULL_PIN_DEFAULT:
-		if (!rockchip_pinconf_pull_valid(info->ctrl, param))
-			return -ENOTSUPP;
-
-		if (!arg)
-			return -EINVAL;
-
-		return rockchip_set_pull(bank, pin - bank->pin_base, param);
+		data = 0xaaaa;
+		break;
+	case PIN_CONFIG_BIAS_BUS_HOLD:
+		data = 0xffff;
 		break;
 	default:
+		dev_err(info->dev, "unsupported pin config param of %u!\n", param);
 		return -ENOTSUPP;
-		break;
 	}
+
+	/* This is the basic reason for the preset and mask way:
+	 * the RK3188 has a very complicated way of addressing the bits.
+	 */
+	if (bank->bank_num == 0 && pin_num < 12) {
+		reg = info->reg_base + PMU_GPIO0A_PULL + ((pin_num / 8) * 4);
+		bits = (pin_num % 8) * 2;
+	} else {
+		reg = info->reg_base + GRF_GPIO0B_PULL - 4 + bank->bank_num * 16 + ((pin_num / 8) * 4);
+		bits = (7 - (pin_num % 8)) * 2;
+	}
+
+	spin_lock_irqsave(&bank->slock, flags);
+
+	/* ...but enable this value only for the selected GPIO */
+	mask = 0x3 << (16 + bits);
+	writel( mask | data, reg);
+	
+	spin_unlock_irqrestore(&bank->slock, flags);
 
 	return 0;
 }
+
+static int rockchip_pinconf_get_multi(struct pinctrl_dev *pctldev,
+						unsigned int pin, 
+						unsigned long *config)
+{
+	struct rockchip_pinctrl *info = pinctrl_dev_get_drvdata(pctldev);
+	struct rockchip_pin_bank *bank = pin_to_bank(info, pin);
+	enum pin_config_param param = pinconf_to_config_param(*config);
+	unsigned long pin_num = pin - bank->pin_base;
+	void __iomem *reg;
+	u32 data, value;
+	u8 bits;
+
+	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, *config);
+
+	switch (param) {
+	case PIN_CONFIG_BIAS_DISABLE:
+		data = 0;
+		break;
+	case PIN_CONFIG_BIAS_PULL_UP:
+		data = 0x1;
+		break;
+	case PIN_CONFIG_BIAS_PULL_DOWN:
+		data = 0x2;
+		break;
+	case PIN_CONFIG_BIAS_BUS_HOLD:
+		data = 0x3;
+		break;
+	default:
+		dev_err(info->dev, "unsupported pin config param of %u!\n", param);
+		return -EINVAL;
+	}
+
+	/* This is the basic reason for the preset and mask way:
+	 * the RK3188 has a very complicated way of addressing the bits.
+	 */
+	if (bank->bank_num == 0 && pin_num < 12) {
+		reg = info->reg_base + PMU_GPIO0A_PULL + ((pin_num / 8) * 4);
+		bits = (pin_num % 8) * 2;
+	} else {
+		reg = info->reg_base + GRF_GPIO0B_PULL - 4 + bank->bank_num * 16 + ((pin_num / 8) * 4);
+		bits = (7 - (pin_num % 8)) * 2;
+	}
+
+	/* read the current configuration and shift the related pin's bits to 
+	 * the most right two bits of value. Compare them and return result.
+	 */
+	value = ((readl(reg) >> bits) & 0x3);
+	*config = (value)? 1 : 0;
+	
+	if (data == value)
+		return 0;
+
+	return -EINVAL;
+}
+
+#if 0 /* ############### JUST FOR REFERNCE ####################### */
+
 
 /* get the pin config settings for a specified pin */
 static int rockchip_pinconf_get(struct pinctrl_dev *pctldev, unsigned int pin,
@@ -632,6 +808,7 @@ static int rockchip_pinconf_get(struct pinctrl_dev *pctldev, unsigned int pin,
 	case PIN_CONFIG_BIAS_PULL_UP:
 	case PIN_CONFIG_BIAS_PULL_DOWN:
 	case PIN_CONFIG_BIAS_PULL_PIN_DEFAULT:
+	case PIN_CONFIG_BIAS_BUS_HOLD:
 		if (!rockchip_pinconf_pull_valid(info->ctrl, param))
 			return -ENOTSUPP;
 
@@ -647,10 +824,22 @@ static int rockchip_pinconf_get(struct pinctrl_dev *pctldev, unsigned int pin,
 
 	return 0;
 }
+#endif /* ############### JUST FOR REFERNCE ####################### */
 
-static const struct pinconf_ops rockchip_pinconf_ops = {
-	.pin_config_get			= rockchip_pinconf_get,
-	.pin_config_set			= rockchip_pinconf_set,
+
+static const struct pinconf_ops rockchip_pinconf_ops_none = {
+	.pin_config_get			= rockchip_pinconf_get_none,
+	.pin_config_set			= rockchip_pinconf_set_none,
+};
+
+static const struct pinconf_ops rockchip_pinconf_ops_auto = {
+	.pin_config_get			= rockchip_pinconf_get_auto,
+	.pin_config_set			= rockchip_pinconf_set_auto,
+};
+
+static const struct pinconf_ops rockchip_pinconf_ops_multi = {
+	.pin_config_get			= rockchip_pinconf_get_multi,
+	.pin_config_set			= rockchip_pinconf_set_multi,
 };
 
 static const char *gpio_compat = "rockchip,gpio-bank";
@@ -829,7 +1018,7 @@ static int rockchip_pinctrl_register(struct platform_device *pdev,
 	ctrldesc->owner = THIS_MODULE;
 	ctrldesc->pctlops = &rockchip_pctrl_ops;
 	ctrldesc->pmxops = &rockchip_pmx_ops;
-	ctrldesc->confops = &rockchip_pinconf_ops;
+	ctrldesc->confops = info->ctrl->pin_config_ops;
 
 	pindesc = devm_kzalloc(&pdev->dev, sizeof(*pindesc) *
 			info->ctrl->nr_pins, GFP_KERNEL);
@@ -1307,8 +1496,8 @@ static struct rockchip_pin_ctrl rk2928_pin_ctrl = {
 		.label			= "RK2928-GPIO",
 		.mux_offset		= 0xa8,
 		.pull_offset		= 0x118,
-		.pull_auto		= 1,
 		.pull_bank_stride	= 8,
+		.pin_config_ops		= &rockchip_pinconf_ops_auto,
 };
 
 static struct rockchip_pin_bank rk3066a_pin_banks[] = {
@@ -1326,8 +1515,8 @@ static struct rockchip_pin_ctrl rk3066a_pin_ctrl = {
 		.label			= "RK3066a-GPIO",
 		.mux_offset		= 0xa8,
 		.pull_offset		= 0x118,
-		.pull_auto		= 1,
 		.pull_bank_stride	= 8,
+		.pin_config_ops		= &rockchip_pinconf_ops_auto,
 };
 
 static struct rockchip_pin_bank rk3066b_pin_banks[] = {
@@ -1338,11 +1527,12 @@ static struct rockchip_pin_bank rk3066b_pin_banks[] = {
 };
 
 static struct rockchip_pin_ctrl rk3066b_pin_ctrl = {
-		.pin_banks	= rk3066b_pin_banks,
-		.nr_banks	= ARRAY_SIZE(rk3066b_pin_banks),
-		.label		= "RK3066b-GPIO",
-		.mux_offset	= 0x60,
-		.pull_offset	= -EINVAL,
+		.pin_banks		= rk3066b_pin_banks,
+		.nr_banks		= ARRAY_SIZE(rk3066b_pin_banks),
+		.label			= "RK3066b-GPIO",
+		.mux_offset		= 0x60,
+		.pull_offset		= -EINVAL,
+		.pin_config_ops		= &rockchip_pinconf_ops_none,
 };
 
 static struct rockchip_pin_bank rk3188_pin_banks[] = {
@@ -1359,6 +1549,7 @@ static struct rockchip_pin_ctrl rk3188_pin_ctrl = {
 		.mux_offset		= 0x68,
 		.pull_offset		= 0x164,
 		.pull_bank_stride	= 16,
+		.pin_config_ops		= &rockchip_pinconf_ops_multi,
 };
 
 static const struct of_device_id rockchip_pinctrl_dt_match[] = {
