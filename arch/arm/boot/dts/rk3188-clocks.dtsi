@@ -71,13 +71,232 @@
 			#clock-cells = <0>;
 		};
 
+		/* TODO: mux_ddr: missing */
+
+		mux_aclk_periph: mux-aclk-periph@2000006c {
+			compatible = "mux-clock";
+			reg = <0x2000006c 0x04>;
+			clocks = <&cpll>, <&gpll>;
+			bit-mask = <0x1>;
+			bit-shift = <15>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		mux_uart_pll: mux-uart-pll@20000074 {
+			compatible = "mux-clock";
+			reg = <0x20000074 0x04>;
+			clocks = <&gpll>, <&cpll>;
+			bit-mask = <0x1>;
+			bit-shift = <15>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_uart0: div-uart0@20000078 {
+			compatible = "divider-clock";
+			reg = <0x20000078 0x04>;
+			clocks = <&mux_uart_pll>;
+			bit-mask = <0x7f>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_uart1: div-uart1@2000007c {
+			compatible = "divider-clock";
+			reg = <0x2000007c 0x04>;
+			clocks = <&mux_uart_pll>;
+			bit-mask = <0x7f>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_uart2: div-uart2@20000080 {
+			compatible = "divider-clock";
+			reg = <0x20000080 0x04>;
+			clocks = <&mux_uart_pll>;
+			bit-mask = <0x7f>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_uart3: div-uart3@20000084 {
+			compatible = "divider-clock";
+			reg = <0x20000084 0x04>;
+			clocks = <&mux_uart_pll>;
+			bit-mask = <0x7f>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		mux_uart0: mux-uart0@20000078 {
+			compatible = "mux-clock";
+			reg = <0x20000078 0x04>;
+			clocks = <&clk_gates1 8>, <&dummy>, <&xin24m>; /* dummy is uart0_frac_div */
+			bit-mask = <0x3>;
+			bit-shift = <8>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		mux_uart1: mux-uart1@2000007c {
+			compatible = "mux-clock";
+			reg = <0x2000007c 0x04>;
+			clocks = <&clk_gates1 10>, <&dummy>, <&xin24m>;
+			bit-mask = <0x3>;
+			bit-shift = <8>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		mux_uart2: mux-uart2@20000080 {
+			compatible = "mux-clock";
+			reg = <0x20000080 0x04>;
+			clocks = <&clk_gates1 12>, <&dummy>, <&xin24m>;
+			bit-mask = <0x3>;
+			bit-shift = <8>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		mux_uart3: mux-uart3@20000084 {
+			compatible = "mux-clock";
+			reg = <0x20000084 0x04>;
+			clocks = <&clk_gates1 14>, <&dummy>, <&xin24m>;
+			bit-mask = <0x3>;
+			bit-shift = <8>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		mux_cpu: mux-cpu@20000044 {
+			compatible = "mux-clock";
+			reg = <0x20000044 0x4>;
+			clocks = <&apll>, <&dummy> /* cpu_gpll_path */;
+			bit-mask = <0x1>;
+			bit-shift = <8>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_cpu: div-cpu@20000044 {
+			compatible = "divider-clock";
+			reg = <0x20000044 0x4>;
+			clocks = <&mux_cpu>;
+			bit-mask = <0x1f>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_core_periph: div-core-periph@20000044 {
+			compatible = "divider-clock";
+			reg = <0x20000044 0x4>;
+			clocks = <&div_cpu>;
+			bit-mask = <0x3>;
+			bit-shift = <6>;
+			hiword-mask;
+			table = <2 0>, <4 1>, <8 2>, <16 3>;
+			#clock-cells = <0>;
+		};
+
+		div_aclk_cpu: div-aclk-cpu@20000048 {
+			compatible = "divider-clock";
+			reg = <0x20000048 0x4>;
+			clocks = <&div_cpu>;
+			bit-mask = <0x3>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_aclk_periph: div-aclk-periph@2000006c {
+			compatible = "divider-clock";
+			reg = <0x2000006c 0x4>;
+			clocks = <&mux_aclk_periph>;
+			bit-mask = <0x1f>;
+			bit-shift = <0>;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_hclk_periph: div-hclk-periph@2000006c {
+			compatible = "divider-clock";
+			reg = <0x2000006c 0x4>;
+			clocks = <&clk_gates2 1>;
+			bit-mask = <0x3>;
+			bit-shift = <8>;
+			index_power_of_two;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_pclk_periph: div-pclk-periph@2000006c {
+			compatible = "divider-clock";
+			reg = <0x2000006c 0x4>;
+			clocks = <&clk_gates2 1>;
+			bit-mask = <0x3>;
+			bit-shift = <12>;
+			index_power_of_two;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_hclk_cpu: div-hclk-cpu@20000048 {
+			compatible = "divider-clock";
+			reg = <0x20000048 0x4>;
+			clocks = <&clk_gates0 3>;
+			bit-mask = <0x3>;
+			bit-shift = <8>;
+			index_power_of_two;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_pclk_cpu: div-pclk-cpu@20000048 {
+			compatible = "divider-clock";
+			reg = <0x20000048 0x4>;
+			clocks = <&clk_gates0 3>;
+			bit-mask = <0x3>;
+			bit-shift = <12>;
+			index_power_of_two;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_mmc0: div-mmc0@20000070 {
+			compatible = "divider-clock";
+			reg = <0x20000070 0x4>;
+			clocks = <&clk_gates2 2>;
+			bit-mask = <0x3f>;
+			bit-shift = <0>;
+			index_even;
+			hiword-mask;
+			#clock-cells = <0>;
+		};
+
+		div_mmc1: div-mmc1@20000074 {
+			compatible = "divider-clock";
+			reg = <0x20000074 0x4>;
+			clocks = <&clk_gates2 2>;
+			bit-mask = <0x3f>;
+			bit-shift = <0>;
+			index_even;
+			hiword-mask;
+ 			#clock-cells = <0>;
+ 		};
+ 		
 		clk_gates0: gate-clk@200000d0 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000d0 0x4>;
 			clocks = 
-				 <&dummy>, <&dummy>,
-				 <&dummy>, <&dummy>,
-				 <&dummy>, <&dummy>,
+				 <&div_core_periph>, <&dummy>,
+				 <&dummy>, <&div_aclk_cpu>,
+				 <&div_hclk_cpu>, <&div_pclk_cpu>,
 				 <&dummy>, <&dummy>,
 				 <&dummy>, <&dummy>,
 				 <&dummy>, <&dummy>,
@@ -105,10 +324,10 @@
 				 <&xin24m>, <&dummy>,
 				 <&dummy>, <&xin24m>,
 				 <&xin24m>, <&gpll>,
-				 <&xin24m>, <&dummy>,
-				 <&xin24m>, <&dummy>,
-				 <&xin24m>, <&dummy>,
-				 <&xin24m>, <&dummy>;
+				 <&div_uart0>, <&dummy>,
+				 <&div_uart1>, <&dummy>,
+				 <&div_uart2>, <&dummy>,
+				 <&div_uart3>, <&dummy>;
 
 			clock-output-names =
 				"gate_timer0", "gate_timer1",
@@ -126,13 +345,13 @@
 		clk_gates2: gate-clk@200000d8 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000d8 0x4>;
-			clocks = <&clk_gates2 1>, <&dummy>,
-				 <&dummy>, <&dummy>,
+			clocks = <&clk_gates2 1>, <&div_aclk_periph>,
+				 <&div_hclk_periph>, <&div_pclk_periph>,
 				 <&dummy>, <&dummy>,
 				 <&clk_gates2 3>, <&dummy>,
 				 <&dummy>, <&dummy>,
-				 <&dummy>, <&xin24m>,
-				 <&dummy>, <&xin24m>,
+				 <&dummy>, <&div_mmc0>,
+				 <&dummy>, <&div_mmc1>,
 				 <&dummy>, <&dummy>;
 
 			clock-output-names =

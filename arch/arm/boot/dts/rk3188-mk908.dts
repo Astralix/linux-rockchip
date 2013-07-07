@@ -15,7 +15,7 @@
 #include "rk3188.dtsi"
 
 / {
-	model = "Rockchip example";
+	model = "Tronsmart MK908";
 
 	chosen {
 		bootargs = "earlyprintk console=ttyS2,115200";
@@ -28,6 +28,14 @@
 	clocks {
 	};
 
+	leds {
+		heartbeat {
+			label = "rockchip::usr0";
+			gpios = <&gpio3 3 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+		};
+	};
+	
 	soc {
 		uart0: serial@10124000 {
 			status = "okay";

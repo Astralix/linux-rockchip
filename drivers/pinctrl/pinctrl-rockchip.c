@@ -640,7 +640,7 @@ static int rockchip_pinconf_get_auto(struct pinctrl_dev *pctldev,
 	void __iomem *reg;
 	u8 bit;
 
-	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, *config);
+	GPIODBG("%s(.. %u, %lx)\n", __func__, pin, *config);
 
 	if (param != PIN_CONFIG_BIAS_DISABLE
 			&& param != PIN_CONFIG_BIAS_PULL_PIN_DEFAULT) {
@@ -681,7 +681,7 @@ static int rockchip_pinconf_set_multi(struct pinctrl_dev *pctldev,
 	u32 data, mask;
 	u8 bits;
 
-	GPIODBG("%s(.. %u, %lu)\n", __func__, pin, config);
+	GPIODBG("%s(.. %u, %lx)\n", __func__, pin, config);
 
 	dev_dbg(info->dev, "setting pull of GPIO%d-%d to %d\n",
 		 bank->bank_num, pin_num, param);

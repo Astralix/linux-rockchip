@@ -21,6 +21,7 @@
 #define APBT_MIN_PERIOD			4
 #define APBT_MIN_DELTA_USEC		200
 
+/* register definitions of 32bits variant */
 #define APBTMR_N_LOAD_COUNT		0x00
 #define APBTMR_N_CURRENT_VALUE		0x04
 #define APBTMR_N_CONTROL		0x08
@@ -32,11 +33,24 @@
 #define APBTMRS_RAW_INT_STATUS		0xa8
 #define APBTMRS_COMP_VERSION		0xac
 
+/* register definitions of 64bits variant */
+#define APBTMR_N64_LOAD_COUNTL		0x00
+#define APBTMR_N64_LOAD_COUNTH		0x04
+#define APBTMR_N64_CURRENT_VALUEL	0x08
+#define APBTMR_N64_CURRENT_VALUEH	0x0c
+#define APBTMR_N64_CONTROL		0x10
+#define APBTMR_N64_INT_STATUS		0x18
+
+
+
 #define APBTMR_CONTROL_ENABLE		(1 << 0)
 /* 1: periodic, 0:free running. */
 #define APBTMR_CONTROL_MODE_PERIODIC	(1 << 1)
 #define APBTMR_CONTROL_INT		(1 << 2)
 
+/**
+ * Common hardware access functions.
+ */
 static inline struct dw_apb_clock_event_device *
 ced_to_dw_apb_ced(struct clock_event_device *evt)
 {
@@ -49,24 +63,9 @@ clocksource_to_dw_apb_clocksource(struct clocksource *cs)
 	return container_of(cs, struct dw_apb_clocksource, cs);
 }
 
-static void apbt_init_regs(struct dw_apb_timer *timer, int quirks)
-{
-	if (quirks & APBTMR_QUIRK_64BIT_COUNTER) {
-		timer->reg_load_count = APBTMR_N_LOAD_COUNT;
-		timer->reg_current_value = APBTMR_N_CURRENT_VALUE + 0x4;
-		timer->reg_control = APBTMR_N_CONTROL + 0x8;
-		timer->reg_eoi = APBTMR_N_EOI + 0x8;
-		timer->reg_int_status = APBTMR_N_INT_STATUS + 0x8;
-	} else {
-		timer->reg_load_count = APBTMR_N_LOAD_COUNT;
-		timer->reg_current_value = APBTMR_N_CURRENT_VALUE;
-		timer->reg_control = APBTMR_N_CONTROL;
-		timer->reg_eoi = APBTMR_N_EOI;
-		timer->reg_int_status = APBTMR_N_INT_STATUS;
-	}
-}
 
-static unsigned long apbt_readl(struct dw_apb_timer *timer, unsigned long offs)
+static unsigned long apbt_readl(struct dw_apb_timer *timer, 
+		unsigned long offs)
 {
 	return readl(timer->base + offs);
 }
@@ -77,15 +76,173 @@ static void apbt_writel(struct dw_apb_timer *timer, unsigned long val,
 	writel(val, timer->base + offs);
 }
 
-static void apbt_disable_int(struct dw_apb_timer *timer)
+static void tmr_bit_set(struct dw_apb_timer *timer, unsigned long offs, 
+		unsigned long bits)
 {
-	unsigned long ctrl = apbt_readl(timer, timer->reg_control);
+	apbt_writel( timer, (apbt_readl(timer, offs) | bits), offs);
+}
 
-	if (timer->quirks & APBTMR_QUIRK_INVERSE_INTMASK)
-		ctrl &= ~APBTMR_CONTROL_INT;
-	else
-		ctrl |= APBTMR_CONTROL_INT;
-	apbt_writel(timer, ctrl, timer->reg_control);
+static void tmr_bit_clr(struct dw_apb_timer *timer, unsigned long offs, 
+		unsigned long bits)
+{
+	apbt_writel( timer, (apbt_readl(timer, offs) & ~bits), offs);
+}
+
+
+static void apbt_timer_init( struct dw_apb_timer *timer)
+{
+ 	apbt_writel(timer, 0, APBTMR_N_CONTROL);
+}
+
+/**
+ * DW_APB implementattion of the timers.
+ */
+
+static void apbt_load32( struct dw_apb_timer *timer,unsigned long period)
+{
+	apbt_writel(timer, period, APBTMR_N_LOAD_COUNT);
+}
+
+static unsigned long apbt_read32( struct dw_apb_timer *timer)
+{
+	return apbt_readl(timer, APBTMR_N_CURRENT_VALUE);
+}
+
+/**
+ * apb_tmr_start() - Start the timer in the previously set mode
+ *
+ * @timer:	The timer to start.
+ */
+static void apb_tmr_start( struct dw_apb_timer *timer)
+{
+	tmr_bit_set(timer, APBTMR_N_CONTROL, APBTMR_CONTROL_ENABLE);
+}
+
+/**
+ * apb_tmr_stop() - Stop the timer
+ *
+ * @timer:	The timer to stop.
+ */
+static void apb_tmr_stop( struct dw_apb_timer *timer)
+{
+	tmr_bit_set(timer, APBTMR_N_CONTROL, APBTMR_CONTROL_ENABLE);
+}
+
+static void apbt_eoi(struct dw_apb_timer *timer)
+{
+	apbt_readl(timer, APBTMR_N_EOI);
+}
+
+ static void apbt_disable_int(struct dw_apb_timer *timer)
+{
+	tmr_bit_set(timer, APBTMR_N_CONTROL, APBTMR_CONTROL_INT);
+}
+
+static void apbt_enable_int(struct dw_apb_timer *timer)
+{
+	/* clear pending intr */
+	timer->eoi(timer);
+	/* enable interrupt */
+	tmr_bit_clr(timer, APBTMR_N_CONTROL, APBTMR_CONTROL_INT);
+}
+
+static void apb_set_periodic( struct dw_apb_timer *timer)
+{
+	tmr_bit_set(timer, APBTMR_N_CONTROL, APBTMR_CONTROL_MODE_PERIODIC);
+}
+
+static void apb_set_oneshot( struct dw_apb_timer *timer)
+{
+	tmr_bit_clr(timer, APBTMR_N_CONTROL, APBTMR_CONTROL_MODE_PERIODIC);
+}
+
+
+/**
+ * Rockchips RK3188 implementation of the timers.
+ */
+
+static void rkc_timer_init( struct dw_apb_timer *timer)
+{
+	printk("%s: %p\n", __func__, timer->base);
+ 	apbt_writel(timer, 0, APBTMR_N64_CONTROL);
+}
+
+static void rkc_load32( struct dw_apb_timer *timer, unsigned long period)
+{
+	printk("%s: %p\n", __func__, timer->base);
+	apbt_writel(timer, period, APBTMR_N64_LOAD_COUNTL);
+	apbt_writel(timer, 0, APBTMR_N64_LOAD_COUNTH);
+}
+
+static unsigned long rkc_read32( struct dw_apb_timer *timer)
+{
+	return apbt_readl(timer, APBTMR_N64_CURRENT_VALUEL);
+}
+
+/**
+ * rkc_tmr_start() - Start the timer in the previously set mode
+ *
+ * @timer:	The timer to start.
+ */
+static void rkc_tmr_start( struct dw_apb_timer *timer)
+{
+	tmr_bit_set(timer, APBTMR_N64_CONTROL, APBTMR_CONTROL_ENABLE);
+}
+
+/**
+ * rkc_tmr_stop() - Stop the timer, Rockchips variant
+ *
+ * @timer:	The timer to stop.
+ */
+static void rkc_tmr_stop( struct dw_apb_timer *timer)
+{
+	tmr_bit_clr(timer, APBTMR_N64_CONTROL, APBTMR_CONTROL_ENABLE);
+}
+
+static void rkc_eoi(struct dw_apb_timer *timer)
+{
+	apbt_writel(timer, 1, APBTMR_N64_INT_STATUS);
+}
+
+static void rkc_disable_int(struct dw_apb_timer *timer)
+{
+	tmr_bit_clr(timer, APBTMR_N64_CONTROL, APBTMR_CONTROL_INT);
+}
+
+static void rkc_enable_int(struct dw_apb_timer *timer)
+{
+	/* clear pending intr */
+	timer->eoi(timer);
+	/* enable interrupt */
+	tmr_bit_set(timer, APBTMR_N64_CONTROL, APBTMR_CONTROL_INT);
+}
+
+static void rkc_set_periodic( struct dw_apb_timer *timer)
+{
+	tmr_bit_clr(timer, APBTMR_N64_CONTROL, APBTMR_CONTROL_MODE_PERIODIC);
+}
+
+static void rkc_set_oneshot( struct dw_apb_timer *timer)
+{
+	tmr_bit_set(timer, APBTMR_N64_CONTROL, APBTMR_CONTROL_MODE_PERIODIC);
+}
+
+static irqreturn_t dw_apb_clockevent_irq(int irq, void *data)
+{
+	struct clock_event_device *evt = data;
+	struct dw_apb_clock_event_device *dw_ced = ced_to_dw_apb_ced(evt);
+
+	printk("%s: %p\n", __func__, dw_ced->timer->base);
+	if (!evt->event_handler) {
+		pr_info("Spurious APBT timer interrupt %d", irq);
+		return IRQ_NONE;
+	}
+
+	if (dw_ced->eoi)
+		dw_ced->eoi(dw_ced->timer);
+
+	evt->event_handler(evt);
+	return IRQ_HANDLED;
 }
 
 /**
@@ -95,59 +252,16 @@ static void apbt_disable_int(struct dw_apb_timer *timer)
  */
 void dw_apb_clockevent_pause(struct dw_apb_clock_event_device *dw_ced)
 {
-	disable_irq(dw_ced->timer.irq);
-	apbt_disable_int(&dw_ced->timer);
-}
-
-static void apbt_eoi(struct dw_apb_timer *timer)
-{
-	apbt_readl(timer, timer->reg_eoi);
-}
-
-static void apbt_eoi_int_status(struct dw_apb_timer *timer)
-{
-  apbt_writel(timer, 1, timer->reg_int_status);
-}
-
-static irqreturn_t dw_apb_clockevent_irq(int irq, void *data)
-{
-	struct clock_event_device *evt = data;
-	struct dw_apb_clock_event_device *dw_ced = ced_to_dw_apb_ced(evt);
-
-	if (!evt->event_handler) {
-		pr_info("Spurious APBT timer interrupt %d", irq);
-		return IRQ_NONE;
-	}
-
-	if (dw_ced->eoi)
-		dw_ced->eoi(&dw_ced->timer);
-
-	evt->event_handler(evt);
-	return IRQ_HANDLED;
-}
-
-static void apbt_enable_int(struct dw_apb_clock_event_device *dw_ced)
-{
-	struct dw_apb_timer *timer = &dw_ced->timer;
-	unsigned long ctrl = apbt_readl(timer, timer->reg_control);
-
-	/* clear pending intr */
-	dw_ced->eoi(timer);
-	/* enable interrupt */
-	if (timer->quirks & APBTMR_QUIRK_INVERSE_INTMASK)
-		ctrl |= APBTMR_CONTROL_INT;
-	else
-		ctrl &= ~APBTMR_CONTROL_INT;
-	apbt_writel(timer, ctrl, timer->reg_control);
+	disable_irq(dw_ced->timer->irq);
+	apbt_disable_int(dw_ced->timer);
 }
 
 static void apbt_set_mode(enum clock_event_mode mode,
 			  struct clock_event_device *evt)
 {
-	unsigned long ctrl;
 	unsigned long period;
 	struct dw_apb_clock_event_device *dw_ced = ced_to_dw_apb_ced(evt);
-	struct dw_apb_timer *timer = &dw_ced->timer;
+	struct dw_apb_timer *timer = dw_ced->timer;
 
 	pr_debug("%s CPU %d mode=%d\n", __func__, first_cpu(*evt->cpumask),
 		 mode);
@@ -155,73 +269,44 @@ static void apbt_set_mode(enum clock_event_mode mode,
 	switch (mode) {
 	case CLOCK_EVT_MODE_PERIODIC:
 		period = DIV_ROUND_UP(timer->freq, HZ);
-		ctrl = apbt_readl(timer, timer->reg_control);
 
-		if (timer->quirks & APBTMR_QUIRK_INVERSE_PERIODIC)
-			ctrl &= ~APBTMR_CONTROL_MODE_PERIODIC;
-		else
-			ctrl |= APBTMR_CONTROL_MODE_PERIODIC;
-		apbt_writel(timer, ctrl, timer->reg_control);
+		timer->tmr_mode_periodic(timer);
 		/*
 		 * DW APB p. 46, have to disable timer before load counter,
 		 * may cause sync problem.
 		 */
-		ctrl &= ~APBTMR_CONTROL_ENABLE;
-		apbt_writel(timer, ctrl, timer->reg_control);
+		timer->tmr_stop(timer);
 		udelay(1);
 		pr_debug("Setting clock period %lu for HZ %d\n", period, HZ);
-		apbt_writel(timer, period, timer->reg_load_count);
-
-		if (timer->quirks & APBTMR_QUIRK_64BIT_COUNTER)
-			apbt_writel(timer, 0, timer->reg_load_count + 0x4);
-
-		ctrl |= APBTMR_CONTROL_ENABLE;
-		apbt_writel(timer, ctrl, timer->reg_control);
+		timer->tmr_load(timer, period);
+		// timer->tmr_enable_int(timer);
+		timer->tmr_start(timer);
 		break;
 
 	case CLOCK_EVT_MODE_ONESHOT:
-		ctrl = apbt_readl(timer, timer->reg_control);
+		timer->tmr_mode_oneshot(timer);
 		/*
 		 * set free running mode, this mode will let timer reload max
 		 * timeout which will give time (3min on 25MHz clock) to rearm
 		 * the next event, therefore emulate the one-shot mode.
 		 */
-		ctrl &= ~APBTMR_CONTROL_ENABLE;
-		if (timer->quirks & APBTMR_QUIRK_INVERSE_PERIODIC)
-			ctrl |= APBTMR_CONTROL_MODE_PERIODIC;
-		else
-			ctrl &= ~APBTMR_CONTROL_MODE_PERIODIC;
-
-		apbt_writel(timer, ctrl, timer->reg_control);
-		/* write again to set free running mode */
-		apbt_writel(timer, ctrl, timer->reg_control);
-
+		timer->tmr_stop(timer);
 		/*
 		 * DW APB p. 46, load counter with all 1s before starting free
 		 * running mode.
 		 */
-		apbt_writel(timer, ~0, timer->reg_load_count);
-
-		if (timer->quirks & APBTMR_QUIRK_64BIT_COUNTER)
-			apbt_writel(timer, 0, timer->reg_load_count + 0x4);
-
-		if (timer->quirks & APBTMR_QUIRK_INVERSE_INTMASK)
-			ctrl |= APBTMR_CONTROL_INT;
-		else
-			ctrl &= ~APBTMR_CONTROL_INT;
-		ctrl |= APBTMR_CONTROL_ENABLE;
-		apbt_writel(timer, ctrl, timer->reg_control);
+		timer->tmr_load(timer, ~0);
+		timer->tmr_enable_int(timer);
+		timer->tmr_start(timer);
 		break;
 
 	case CLOCK_EVT_MODE_UNUSED:
 	case CLOCK_EVT_MODE_SHUTDOWN:
-		ctrl = apbt_readl(timer, timer->reg_control);
-		ctrl &= ~APBTMR_CONTROL_ENABLE;
-		apbt_writel(timer, ctrl, timer->reg_control);
+		timer->tmr_stop(timer);
 		break;
 
 	case CLOCK_EVT_MODE_RESUME:
-		apbt_enable_int(dw_ced);
+		apbt_enable_int(timer);
 		break;
 	}
 }
@@ -229,22 +314,14 @@ static void apbt_set_mode(enum clock_event_mode mode,
 static int apbt_next_event(unsigned long delta,
 			   struct clock_event_device *evt)
 {
-	unsigned long ctrl;
 	struct dw_apb_clock_event_device *dw_ced = ced_to_dw_apb_ced(evt);
-	struct dw_apb_timer *timer = &dw_ced->timer;
+	struct dw_apb_timer *timer = dw_ced->timer;
 
 	/* Disable timer */
-	ctrl = apbt_readl(timer, timer->reg_control);
-	ctrl &= ~APBTMR_CONTROL_ENABLE;
-	apbt_writel(timer, ctrl, timer->reg_control);
+	timer->tmr_stop(timer);
 	/* write new count */
-	apbt_writel(timer, delta, timer->reg_load_count);
-
-	if (timer->quirks & APBTMR_QUIRK_64BIT_COUNTER)
-		apbt_writel(timer, 0, timer->reg_load_count + 0x4);
-
-	ctrl |= APBTMR_CONTROL_ENABLE;
-	apbt_writel(timer, ctrl, timer->reg_control);
+	timer->tmr_load(timer, delta);
+	timer->tmr_start(timer);
 
 	return 0;
 }
@@ -268,8 +345,8 @@ static int apbt_next_event(unsigned long delta,
  */
 struct dw_apb_clock_event_device *
 dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
-		       void __iomem *base, int irq, unsigned long freq,
-		       int quirks)
+		       void __iomem *base, struct dw_apb_timer *ptimer,
+		       int irq, unsigned long freq)
 {
 	struct dw_apb_clock_event_device *dw_ced =
 		kzalloc(sizeof(*dw_ced), GFP_KERNEL);
@@ -278,11 +355,19 @@ dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
 	if (!dw_ced)
 		return NULL;
 
-	dw_ced->timer.base = base;
-	dw_ced->timer.irq = irq;
-	dw_ced->timer.freq = freq;
-	dw_ced->timer.quirks = quirks;
-	apbt_init_regs(&dw_ced->timer, quirks);
+	if (ptimer == NULL) {
+		pr_err("no valid ptimer to register clockevent\n");
+		kfree(dw_ced);
+		return NULL;
+	}
+
+	dw_ced->timer = ptimer;
+	dw_ced->timer->base = base;
+	dw_ced->timer->irq = irq;
+	dw_ced->timer->freq = freq;
+	dw_ced->eoi = ptimer->eoi;
+
+	printk("%s:[%p] irq %u, frq %lu\n", __func__, dw_ced->timer, irq, freq);
 
 	clockevents_calc_mult_shift(&dw_ced->ced, freq, APBT_MIN_PERIOD);
 	dw_ced->ced.max_delta_ns = clockevent_delta2ns(0x7fffffff,
@@ -292,7 +377,7 @@ dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
 	dw_ced->ced.features = CLOCK_EVT_FEAT_PERIODIC | CLOCK_EVT_FEAT_ONESHOT;
 	dw_ced->ced.set_mode = apbt_set_mode;
 	dw_ced->ced.set_next_event = apbt_next_event;
-	dw_ced->ced.irq = dw_ced->timer.irq;
+	dw_ced->ced.irq = dw_ced->timer->irq;
 	dw_ced->ced.rating = rating;
 	dw_ced->ced.name = name;
 
@@ -304,10 +389,6 @@ dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
 					  IRQF_NOBALANCING |
 					  IRQF_DISABLED;
 
-	if (quirks & APBTMR_QUIRK_NO_EOI)
-		dw_ced->eoi = apbt_eoi_int_status;
-	else
-		dw_ced->eoi = apbt_eoi;
 	err = setup_irq(irq, &dw_ced->irqaction);
 	if (err) {
 		pr_err("failed to request timer irq\n");
@@ -325,7 +406,7 @@ dw_apb_clockevent_init(int cpu, const char *name, unsigned rating,
  */
 void dw_apb_clockevent_resume(struct dw_apb_clock_event_device *dw_ced)
 {
-	enable_irq(dw_ced->timer.irq);
+	enable_irq(dw_ced->timer->irq);
 }
 
 /**
@@ -335,7 +416,7 @@ void dw_apb_clockevent_resume(struct dw_apb_clock_event_device *dw_ced)
  */
 void dw_apb_clockevent_stop(struct dw_apb_clock_event_device *dw_ced)
 {
-	free_irq(dw_ced->timer.irq, &dw_ced->ced);
+	free_irq(dw_ced->timer->irq, &dw_ced->ced);
 }
 
 /**
@@ -345,11 +426,11 @@ void dw_apb_clockevent_stop(struct dw_apb_clock_event_device *dw_ced)
  */
 void dw_apb_clockevent_register(struct dw_apb_clock_event_device *dw_ced)
 {
-	struct dw_apb_timer *timer = &dw_ced->timer;
+	struct dw_apb_timer *timer = dw_ced->timer;
 
-	apbt_writel(timer, 0, timer->reg_control);
+	timer->tmr_init(timer);
 	clockevents_register_device(&dw_ced->ced);
-	apbt_enable_int(dw_ced);
+	timer->tmr_enable_int(timer);
 }
 
 /**
@@ -362,28 +443,17 @@ void dw_apb_clockevent_register(struct dw_apb_clock_event_device *dw_ced)
  */
 void dw_apb_clocksource_start(struct dw_apb_clocksource *dw_cs)
 {
-	struct dw_apb_timer *timer = &dw_cs->timer;
+	struct dw_apb_timer *timer = dw_cs->timer;
 	/*
-	 * start count down from 0xffff_ffff. this is done by toggling the
+	 * start count down from 0xffff_ffff. This is done by toggling the
 	 * enable bit then load initial load count to ~0.
 	 */
-	unsigned long ctrl = apbt_readl(timer, timer->reg_control);
-
-	ctrl &= ~APBTMR_CONTROL_ENABLE;
-	apbt_writel(timer, ctrl, timer->reg_control);
-	apbt_writel(timer, ~0, timer->reg_load_count);
-
-	if (timer->quirks & APBTMR_QUIRK_64BIT_COUNTER)
-		apbt_writel(timer, 0, timer->reg_load_count + 0x4);
-
+	timer->tmr_stop(timer);
+	timer->tmr_load(timer, ~0);
 	/* set periodic, mask interrupt, enable timer */
-	ctrl &= ~APBTMR_CONTROL_MODE_PERIODIC;
-	if (timer->quirks & APBTMR_QUIRK_INVERSE_INTMASK)
-		ctrl &= ~APBTMR_CONTROL_INT;
-	else
-		ctrl |= APBTMR_CONTROL_INT;
-	ctrl |= APBTMR_CONTROL_ENABLE;
-	apbt_writel(timer, ctrl, timer->reg_control);
+	timer->tmr_mode_periodic(timer);
+	timer->tmr_disable_int(timer);
+	timer->tmr_start(timer);
 	/* read it once to get cached counter value initialized */
 	dw_apb_clocksource_read(dw_cs);
 }
@@ -392,9 +462,9 @@ static cycle_t __apbt_read_clocksource(struct clocksource *cs)
 {
 	struct dw_apb_clocksource *dw_cs =
 		clocksource_to_dw_apb_clocksource(cs);
-	struct dw_apb_timer *timer = &dw_cs->timer;
+	struct dw_apb_timer *timer = dw_cs->timer;
 
-	return (cycle_t)~apbt_readl(timer, timer->reg_current_value);
+	return (cycle_t)~(timer->tmr_read)(timer);
 }
 
 static void apbt_restart_clocksource(struct clocksource *cs)
@@ -404,6 +474,33 @@ static void apbt_restart_clocksource(struct clocksource *cs)
 
 	dw_apb_clocksource_start(dw_cs);
 }
+
+struct dw_apb_timer rkc_apbt_32 = {
+	.eoi = rkc_eoi,
+	.tmr_init = rkc_timer_init,
+	.tmr_start = rkc_tmr_start,
+	.tmr_stop = rkc_tmr_stop,
+	.tmr_load = rkc_load32,
+	.tmr_read = rkc_read32,
+	.tmr_enable_int = rkc_enable_int,
+	.tmr_disable_int = rkc_disable_int,
+	.tmr_mode_oneshot = rkc_set_oneshot,
+	.tmr_mode_periodic = rkc_set_periodic,
+
+};
+
+struct dw_apb_timer dw_apbt_32 = {
+	.eoi = apbt_eoi,
+	.tmr_init = apbt_timer_init,
+	.tmr_start = apb_tmr_start,
+	.tmr_stop = apb_tmr_stop,
+	.tmr_load = apbt_load32,
+	.tmr_read = apbt_read32,
+	.tmr_enable_int = apbt_enable_int,
+	.tmr_disable_int = apbt_disable_int,
+	.tmr_mode_oneshot = apb_set_oneshot,
+	.tmr_mode_periodic = apb_set_periodic,
+};
 
 /**
  * dw_apb_clocksource_init() - use an APB timer as a clocksource.
@@ -419,17 +516,24 @@ static void apbt_restart_clocksource(struct clocksource *cs)
  */
 struct dw_apb_clocksource *
 dw_apb_clocksource_init(unsigned rating, const char *name, void __iomem *base,
-			unsigned long freq, int quirks)
+			struct dw_apb_timer *ptimer, unsigned long freq)
 {
 	struct dw_apb_clocksource *dw_cs = kzalloc(sizeof(*dw_cs), GFP_KERNEL);
 
 	if (!dw_cs)
 		return NULL;
 
-	dw_cs->timer.base = base;
-	dw_cs->timer.freq = freq;
-	dw_cs->timer.quirks = quirks;
-	apbt_init_regs(&dw_cs->timer, quirks);
+	if (ptimer == NULL) {
+		pr_err("no valid ptimer to register clocksource\n");
+		kfree(dw_cs);
+		return NULL;
+	}
+
+	dw_cs->timer = ptimer;
+	dw_cs->timer->base = base;
+	dw_cs->timer->freq = freq;
+
+	printk("%s:[%p] frq %lu\n", __func__, dw_cs->timer, freq);
 
 	dw_cs->cs.name = name;
 	dw_cs->cs.rating = rating;
@@ -448,7 +552,7 @@ dw_apb_clocksource_init(unsigned rating, const char *name, void __iomem *base,
  */
 void dw_apb_clocksource_register(struct dw_apb_clocksource *dw_cs)
 {
-	clocksource_register_hz(&dw_cs->cs, dw_cs->timer.freq);
+	clocksource_register_hz(&dw_cs->cs, dw_cs->timer->freq);
 }
 
 /**
@@ -458,8 +562,8 @@ void dw_apb_clocksource_register(struct dw_apb_clocksource *dw_cs)
  */
 cycle_t dw_apb_clocksource_read(struct dw_apb_clocksource *dw_cs)
 {
-	struct dw_apb_timer *timer = &dw_cs->timer;
-	return (cycle_t)~apbt_readl(timer, timer->reg_current_value);
+	struct dw_apb_timer *timer = dw_cs->timer;
+	return (cycle_t)~(timer->tmr_read)(timer);
 }
 
 /**

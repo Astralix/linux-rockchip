@@ -27,6 +27,7 @@
 #include "core.h"
 
 //extern int cclk_summary_show(void *data);
+extern void rk30_clk_dump_regs(void);
 
 static void __init rockchip_timer_init(void)
 {
@@ -34,6 +35,7 @@ static void __init rockchip_timer_init(void)
 	clocksource_of_init();
 
 //cclk_summary_show(NULL);
+	rk30_clk_dump_regs();
 }
 
 static void __init rockchip_dt_init(void)

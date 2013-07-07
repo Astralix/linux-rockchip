@@ -26,7 +26,7 @@
 #include <asm/sched_clock.h>
 
 static void timer_get_base_and_rate(struct device_node *np,
-				    void __iomem **base, u32 *rate, int *quirks)
+				    void __iomem **base, u32 *rate)
 {
 	struct clk *timer_clk;
 	struct clk *pclk;
@@ -35,25 +35,21 @@ static void timer_get_base_and_rate(struct device_node *np,
 
 	if (!*base)
 		panic("Unable to map regs for %s", np->name);
-
-	*quirks = 0;
-
-	if (of_device_is_compatible(np, "rockchip,rk3188-dw-apb-timer-osc"))
-		*quirks |= (APBTMR_QUIRK_64BIT_COUNTER | APBTMR_QUIRK_NO_EOI 
-				| APBTMR_QUIRK_INVERSE_INTMASK | APBTMR_QUIRK_INVERSE_PERIODIC
-			);
+	printk("%s()\n\tbase=%p\n", __func__, *base);
 
 	/*
-	 * Not all implementations use a periphal clock, so don't panic
+	 * Not all implementations use a peripheral clock, so don't panic
 	 * if it's not present
 	 */
 	pclk = of_clk_get_by_name(np, "pclk");
+	printk("\tpclk=%p\n", pclk);
 	if (!IS_ERR(pclk))
 		if (clk_prepare_enable(pclk))
 			pr_warn("pclk for %s is present, but could not be activated\n",
 				np->name);
 
 	timer_clk = of_clk_get_by_name(np, "timer");
+	printk("\ttimer_clk=%p\n", timer_clk);
 	if (IS_ERR(timer_clk))
 		goto try_clock_freq;
 
@@ -61,6 +57,7 @@ static void timer_get_base_and_rate(struct device_node *np,
 		*rate = clk_get_rate(timer_clk);
 		return;
 	}
+	printk("\ttry_clock_freq...\n");
 
 try_clock_freq:
 	if (of_property_read_u32(np, "clock-freq", rate) &&
@@ -68,21 +65,21 @@ try_clock_freq:
 		panic("No clock nor clock-frequency property for %s", np->name);
 }
 
-static void add_clockevent(struct device_node *event_timer)
+static void add_clockevent(struct device_node *event_timer,
+						struct dw_apb_timer *ptimer)
 {
 	void __iomem *iobase;
 	struct dw_apb_clock_event_device *ced;
 	u32 irq, rate;
-	int quirks;
 
 	irq = irq_of_parse_and_map(event_timer, 0);
 	if (irq == NO_IRQ)
 		panic("No IRQ for clock event timer");
 
-	timer_get_base_and_rate(event_timer, &iobase, &rate, &quirks);
+	timer_get_base_and_rate(event_timer, &iobase, &rate);
 
-	ced = dw_apb_clockevent_init(0, event_timer->name, 300, iobase, irq,
-				     rate, quirks);
+	ced = dw_apb_clockevent_init(0, event_timer->name, 300, iobase,
+					ptimer, irq, rate);
 	if (!ced)
 		panic("Unable to initialise clockevent device");
 
@@ -92,17 +89,17 @@ static void add_clockevent(struct device_node *event_timer)
 static void __iomem *sched_io_base;
 static u32 sched_rate;
 
-static void add_clocksource(struct device_node *source_timer)
+static void add_clocksource(struct device_node *source_timer,
+						struct dw_apb_timer *ptimer)
 {
 	void __iomem *iobase;
 	struct dw_apb_clocksource *cs;
 	u32 rate;
-	int quirks;
 
-	timer_get_base_and_rate(source_timer, &iobase, &rate, &quirks);
+	timer_get_base_and_rate(source_timer, &iobase, &rate);
 
-	cs = dw_apb_clocksource_init(300, source_timer->name, iobase, rate,
-				     quirks);
+	cs = dw_apb_clocksource_init(300, source_timer->name, iobase,
+					ptimer, rate);
 	if (!cs)
 		panic("Unable to initialise clocksource device");
 
@@ -116,9 +113,6 @@ static void add_clocksource(struct device_node *source_timer)
 	 */
 	sched_io_base = iobase + 0x04;
 	sched_rate = rate;
-
-	if (quirks & APBTMR_QUIRK_64BIT_COUNTER)
-		sched_io_base += 0x04;
 }
 
 static u32 read_sched_clock(void)
@@ -126,22 +120,25 @@ static u32 read_sched_clock(void)
 	return __raw_readl(sched_io_base);
 }
 
+extern struct dw_apb_timer dw_apbt_32;
+extern struct dw_apb_timer rkc_apbt_32;
+
 static const struct of_device_id sptimer_ids[] __initconst = {
-	{ .compatible = "picochip,pc3x2-rtc" },
-	{ .compatible = "snps,dw-apb-timer-sp" },
-	{ .compatible = "rockchip,rk3188-dw-apb-timer-osc" },
+	{ .compatible = "picochip,pc3x2-rtc",
+		.data = &dw_apbt_32 },
+	{ .compatible = "snps,dw-apb-timer-sp",
+		.data = &dw_apbt_32 },
 	{ /* Sentinel */ },
 };
 
 static void init_sched_clock(void)
 {
 	struct device_node *sched_timer;
-	int quirks;
 
 	sched_timer = of_find_matching_node(NULL, sptimer_ids);
 	if (sched_timer) {
 		timer_get_base_and_rate(sched_timer, &sched_io_base,
-					&sched_rate, &quirks);
+					&sched_rate);
 		of_node_put(sched_timer);
 	}
 
@@ -149,17 +146,17 @@ static void init_sched_clock(void)
 }
 
 static int num_called;
-static void __init dw_apb_timer_init(struct device_node *timer)
+static void __init dw_apb_timer_init(struct device_node *timer, struct dw_apb_timer *ptimer)
 {
 	switch (num_called) {
 	case 0:
 		pr_debug("%s: found clockevent timer\n", __func__);
-		add_clockevent(timer);
+		add_clockevent(timer, ptimer);
 		of_node_put(timer);
 		break;
 	case 1:
 		pr_debug("%s: found clocksource timer\n", __func__);
-		add_clocksource(timer);
+		add_clocksource(timer, ptimer);
 		of_node_put(timer);
 		init_sched_clock();
 		break;
@@ -169,6 +166,18 @@ static void __init dw_apb_timer_init(struct device_node *timer)
 
 	num_called++;
 }
-CLOCKSOURCE_OF_DECLARE(pc3x2_timer, "picochip,pc3x2-timer", dw_apb_timer_init);
-CLOCKSOURCE_OF_DECLARE(apb_timer, "snps,dw-apb-timer-osc", dw_apb_timer_init);
-CLOCKSOURCE_OF_DECLARE(rk3188_timer, "rockchip,rk3188-dw-apb-timer-osc", dw_apb_timer_init);
+
+static void __init dw_apb_timer32_init_base(struct device_node *timer)
+{
+       dw_apb_timer_init(timer, &dw_apbt_32);
+}
+
+static void __init dw_rkc_timer32_init_base(struct device_node *timer)
+{
+       dw_apb_timer_init(timer, &rkc_apbt_32);
+}
+
+
+CLOCKSOURCE_OF_DECLARE(pc3x2_timer, "picochip,pc3x2-timer", dw_apb_timer32_init_base);
+CLOCKSOURCE_OF_DECLARE(apb_timer, "snps,dw-apb-timer-osc", dw_apb_timer32_init_base);
+CLOCKSOURCE_OF_DECLARE(rk3188_timer, "rockchip,rk3188-dw-apb-timer-osc", dw_rkc_timer32_init_base);
