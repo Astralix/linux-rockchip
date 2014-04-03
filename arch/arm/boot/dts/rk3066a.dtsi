@@ -40,10 +40,10 @@
 	};
 
 	soc {
-		sram: sram@10080000 {
+	sram: sram@10080000 {
 			compatible = "rockchip,rk3066-sram", "mmio-sram";
 			reg = <0x10080000 0x10000>;
-			available = <0x50 0xffb0>;
+			mmio-sram-reserved = <0x0 0x50>;
 		};
 
 		timer@20038000 {
@@ -68,6 +68,19 @@
 			interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
 			clocks = <&clk_gates1 2>, <&clk_gates7 9>;
 			clock-names = "timer", "pclk";
+		};
+
+		sram: sram@10080000 {
+			compatible = "mmio-sram";
+			reg = <0x10080000 0x10000>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x10080000 0x10000>;
+
+			smp-sram@0 {
+				compatible = "rockchip,rk3066-smp-sram";
+				reg = <0x0 0x50>;
+			};
 		};
 
 		pinctrl@20008000 {

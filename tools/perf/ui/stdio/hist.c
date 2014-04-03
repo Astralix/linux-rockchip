@@ -213,20 +213,19 @@ static size_t callchain__fprintf_graph(FILE *fp, struct rb_root *root,
 	return ret;
 }
 
-static size_t __callchain__fprintf_flat(FILE *fp,
-					struct callchain_node *self,
+static size_t __callchain__fprintf_flat(FILE *fp, struct callchain_node *node,
 					u64 total_samples)
 {
 	struct callchain_list *chain;
 	size_t ret = 0;
 
-	if (!self)
+	if (!node)
 		return 0;
 
-	ret += __callchain__fprintf_flat(fp, self->parent, total_samples);
+	ret += __callchain__fprintf_flat(fp, node->parent, total_samples);
 
 
-	list_for_each_entry(chain, &self->val, list) {
+	list_for_each_entry(chain, &node->val, list) {
 		if (chain->ip >= PERF_CONTEXT_MAX)
 			continue;
 		if (chain->ms.sym)
@@ -239,15 +238,14 @@ static size_t __callchain__fprintf_flat(FILE *fp,
 	return ret;
 }
 
-static size_t callchain__fprintf_flat(FILE *fp, struct rb_root *self,
+static size_t callchain__fprintf_flat(FILE *fp, struct rb_root *tree,
 				      u64 total_samples)
 {
 	size_t ret = 0;
 	u32 entries_printed = 0;
-	struct rb_node *rb_node;
 	struct callchain_node *chain;
+	struct rb_node *rb_node = rb_first(tree);
 
-	rb_node = rb_first(self);
 	while (rb_node) {
 		double percent;
 
@@ -308,15 +306,8 @@ static size_t hist_entry__callchain_fprintf(struct hist_entry *he,
 	return hist_entry_callchain__fprintf(he, total_period, left_margin, fp);
 }
 
-static inline void advance_hpp(struct perf_hpp *hpp, int inc)
-{
-	hpp->buf  += inc;
-	hpp->size -= inc;
-}
-
 static int hist_entry__period_snprintf(struct perf_hpp *hpp,
-				       struct hist_entry *he,
-				       bool color)
+				       struct hist_entry *he)
 {
 	const char *sep = symbol_conf.field_sep;
 	struct perf_hpp_fmt *fmt;
@@ -338,7 +329,7 @@ static int hist_entry__period_snprintf(struct perf_hpp *hpp,
 		} else
 			first = false;
 
-		if (color && fmt->color)
+		if (perf_hpp__use_color() && fmt->color)
 			ret = fmt->color(fmt, hpp, he);
 		else
 			ret = fmt->entry(fmt, hpp, he);
@@ -358,12 +349,11 @@ static int hist_entry__fprintf(struct hist_entry *he, size_t size,
 		.buf		= bf,
 		.size		= size,
 	};
-	bool color = !symbol_conf.field_sep;
 
 	if (size == 0 || size > bfsz)
 		size = hpp.size = bfsz;
 
-	ret = hist_entry__period_snprintf(&hpp, he, color);
+	ret = hist_entry__period_snprintf(&hpp, he);
 	hist_entry__sort_snprintf(he, bf + ret, size - ret, hists);
 
 	ret = fprintf(fp, "%s\n", bf);
@@ -389,7 +379,6 @@ size_t hists__fprintf(struct hists *hists, bool show_header, int max_rows,
 	struct perf_hpp dummy_hpp = {
 		.buf	= bf,
 		.size	= sizeof(bf),
-		.ptr	= hists_to_evsel(hists),
 	};
 	bool first = true;
 	size_t linesz;
@@ -408,7 +397,7 @@ size_t hists__fprintf(struct hists *hists, bool show_header, int max_rows,
 		else
 			first = false;
 
-		fmt->header(fmt, &dummy_hpp);
+		fmt->header(fmt, &dummy_hpp, hists_to_evsel(hists));
 		fprintf(fp, "%s", bf);
 	}
 
@@ -453,7 +442,7 @@ size_t hists__fprintf(struct hists *hists, bool show_header, int max_rows,
 		else
 			first = false;
 
-		width = fmt->width(fmt, &dummy_hpp);
+		width = fmt->width(fmt, &dummy_hpp, hists_to_evsel(hists));
 		for (i = 0; i < width; i++)
 			fprintf(fp, ".");
 	}
@@ -482,6 +471,7 @@ size_t hists__fprintf(struct hists *hists, bool show_header, int max_rows,
 
 print_entries:
 	linesz = hists__sort_list_width(hists) + 3 + 1;
+	linesz += perf_hpp__color_overhead();
 	line = malloc(linesz);
 	if (line == NULL) {
 		ret = -1;
@@ -513,7 +503,7 @@ print_entries:
 
 	free(line);
 out:
-	free(rem_sq_bracket);
+	zfree(&rem_sq_bracket);
 
 	return ret;
 }

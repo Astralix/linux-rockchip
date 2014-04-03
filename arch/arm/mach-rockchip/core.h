@@ -20,3 +20,5 @@ extern unsigned long rockchip_boot_fn;
 extern void rockchip_secondary_startup(void);
 
 extern struct smp_operations rockchip_smp_ops;
+
+extern void rockchip_clocks_apply_init_table(void);

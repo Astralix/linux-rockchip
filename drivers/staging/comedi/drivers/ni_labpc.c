@@ -73,8 +73,6 @@
 #include "ni_labpc_isadma.h"
 
 #define LABPC_SIZE		0x20	/* size of ISA io region */
-#define LABPC_TIMER_BASE	500	/* 2 MHz master clock */
-#define LABPC_ADC_TIMEOUT	1000
 
 enum scan_mode {
 	MODE_SINGLE_CHAN,
@@ -201,12 +199,6 @@ static int labpc_counter_set_mode(struct comedi_device *dev,
 		return i8254_set_mode(base_address, 0, counter_number, mode);
 }
 
-static bool labpc_range_is_unipolar(struct comedi_subdevice *s,
-				    unsigned int range)
-{
-	return s->range_table->range[range].min >= 0;
-}
-
 static int labpc_cancel(struct comedi_device *dev, struct comedi_subdevice *s)
 {
 	struct labpc_private *devpriv = dev->private;
@@ -272,7 +264,7 @@ static void labpc_setup_cmd6_reg(struct comedi_device *dev,
 		devpriv->cmd6 &= ~CMD6_NRSE;
 
 	/* bipolar or unipolar range? */
-	if (labpc_range_is_unipolar(s, range))
+	if (comedi_range_is_unipolar(s, range))
 		devpriv->cmd6 |= CMD6_ADCUNI;
 	else
 		devpriv->cmd6 &= ~CMD6_ADCUNI;
@@ -315,19 +307,17 @@ static void labpc_clear_adc_fifo(struct comedi_device *dev)
 	labpc_read_adc_fifo(dev);
 }
 
-static int labpc_ai_wait_for_data(struct comedi_device *dev,
-				  int timeout)
+static int labpc_ai_eoc(struct comedi_device *dev,
+			struct comedi_subdevice *s,
+			struct comedi_insn *insn,
+			unsigned long context)
 {
 	struct labpc_private *devpriv = dev->private;
-	int i;
 
-	for (i = 0; i < timeout; i++) {
-		devpriv->stat1 = devpriv->read_byte(dev->iobase + STAT1_REG);
-		if (devpriv->stat1 & STAT1_DAVAIL)
-			return 0;
-		udelay(1);
-	}
-	return -ETIME;
+	devpriv->stat1 = devpriv->read_byte(dev->iobase + STAT1_REG);
+	if (devpriv->stat1 & STAT1_DAVAIL)
+		return 0;
+	return -EBUSY;
 }
 
 static int labpc_ai_insn_read(struct comedi_device *dev,
@@ -370,7 +360,7 @@ static int labpc_ai_insn_read(struct comedi_device *dev,
 		/* trigger conversion */
 		devpriv->write_byte(0x1, dev->iobase + ADC_START_CONVERT_REG);
 
-		ret = labpc_ai_wait_for_data(dev, LABPC_ADC_TIMEOUT);
+		ret = comedi_timeout(dev, s, insn, labpc_ai_eoc, 0);
 		if (ret)
 			return ret;
 
@@ -465,13 +455,13 @@ static void labpc_adc_timing(struct comedi_device *dev, struct comedi_cmd *cmd,
 		 * clock speed on convert and scan counters)
 		 */
 		devpriv->divisor_b0 = (scan_period - 1) /
-		    (LABPC_TIMER_BASE * max_counter_value) + 1;
+		    (I8254_OSC_BASE_2MHZ * max_counter_value) + 1;
 		if (devpriv->divisor_b0 < min_counter_value)
 			devpriv->divisor_b0 = min_counter_value;
 		if (devpriv->divisor_b0 > max_counter_value)
 			devpriv->divisor_b0 = max_counter_value;
 
-		base_period = LABPC_TIMER_BASE * devpriv->divisor_b0;
+		base_period = I8254_OSC_BASE_2MHZ * devpriv->divisor_b0;
 
 		/*  set a0 for conversion frequency and b1 for scan frequency */
 		switch (cmd->flags & TRIG_ROUND_MASK) {
@@ -516,22 +506,20 @@ static void labpc_adc_timing(struct comedi_device *dev, struct comedi_cmd *cmd,
 		 * calculate cascaded counter values
 		 * that give desired scan timing
 		 */
-		i8253_cascade_ns_to_timer_2div(LABPC_TIMER_BASE,
-					       &(devpriv->divisor_b1),
-					       &(devpriv->divisor_b0),
-					       &scan_period,
-					       cmd->flags & TRIG_ROUND_MASK);
+		i8253_cascade_ns_to_timer(I8254_OSC_BASE_2MHZ,
+					  &devpriv->divisor_b1,
+					  &devpriv->divisor_b0,
+					  &scan_period, cmd->flags);
 		labpc_set_ai_scan_period(cmd, mode, scan_period);
 	} else if (convert_period) {
 		/*
 		 * calculate cascaded counter values
 		 * that give desired conversion timing
 		 */
-		i8253_cascade_ns_to_timer_2div(LABPC_TIMER_BASE,
-					       &(devpriv->divisor_a0),
-					       &(devpriv->divisor_b0),
-					       &convert_period,
-					       cmd->flags & TRIG_ROUND_MASK);
+		i8253_cascade_ns_to_timer(I8254_OSC_BASE_2MHZ,
+					  &devpriv->divisor_a0,
+					  &devpriv->divisor_b0,
+					  &convert_period, cmd->flags);
 		labpc_set_ai_convert_period(cmd, mode, convert_period);
 	}
 }
@@ -902,7 +890,7 @@ static int labpc_ai_cmd(struct comedi_device *dev, struct comedi_subdevice *s)
 static int labpc_drain_fifo(struct comedi_device *dev)
 {
 	struct labpc_private *devpriv = dev->private;
-	short data;
+	unsigned short data;
 	struct comedi_async *async = dev->read_subdev->async;
 	const int timeout = 10000;
 	unsigned int i;
@@ -959,7 +947,6 @@ static irqreturn_t labpc_interrupt(int irq, void *d)
 
 	async = s->async;
 	cmd = &async->cmd;
-	async->events = 0;
 
 	/* read board status */
 	devpriv->stat1 = devpriv->read_byte(dev->iobase + STAT1_REG);
@@ -977,7 +964,7 @@ static irqreturn_t labpc_interrupt(int irq, void *d)
 		/* clear error interrupt */
 		devpriv->write_byte(0x1, dev->iobase + ADC_FIFO_CLEAR_REG);
 		async->events |= COMEDI_CB_ERROR | COMEDI_CB_EOA;
-		comedi_event(dev, s);
+		cfc_handle_events(dev, s);
 		comedi_error(dev, "overrun");
 		return IRQ_HANDLED;
 	}
@@ -997,7 +984,7 @@ static irqreturn_t labpc_interrupt(int irq, void *d)
 		/*  clear error interrupt */
 		devpriv->write_byte(0x1, dev->iobase + ADC_FIFO_CLEAR_REG);
 		async->events |= COMEDI_CB_ERROR | COMEDI_CB_EOA;
-		comedi_event(dev, s);
+		cfc_handle_events(dev, s);
 		comedi_error(dev, "overflow");
 		return IRQ_HANDLED;
 	}
@@ -1005,20 +992,17 @@ static irqreturn_t labpc_interrupt(int irq, void *d)
 	if (cmd->stop_src == TRIG_EXT) {
 		if (devpriv->stat2 & STAT2_OUTA1) {
 			labpc_drain_dregs(dev);
-			labpc_cancel(dev, s);
 			async->events |= COMEDI_CB_EOA;
 		}
 	}
 
 	/* TRIG_COUNT end of acquisition */
 	if (cmd->stop_src == TRIG_COUNT) {
-		if (devpriv->count == 0) {
-			labpc_cancel(dev, s);
+		if (devpriv->count == 0)
 			async->events |= COMEDI_CB_EOA;
-		}
 	}
 
-	comedi_event(dev, s);
+	cfc_handle_events(dev, s);
 	return IRQ_HANDLED;
 }
 
@@ -1046,7 +1030,7 @@ static int labpc_ao_insn_write(struct comedi_device *dev,
 	/* set range */
 	if (board->is_labpc1200) {
 		range = CR_RANGE(insn->chanspec);
-		if (labpc_range_is_unipolar(s, range))
+		if (comedi_range_is_unipolar(s, range))
 			devpriv->cmd6 |= CMD6_DACUNI(channel);
 		else
 			devpriv->cmd6 &= ~CMD6_DACUNI(channel);

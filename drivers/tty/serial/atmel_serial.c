@@ -99,6 +99,7 @@ static void atmel_stop_rx(struct uart_port *port);
 #define UART_PUT_RTOR(port,v)	__raw_writel(v, (port)->membase + ATMEL_US_RTOR)
 #define UART_PUT_TTGR(port, v)	__raw_writel(v, (port)->membase + ATMEL_US_TTGR)
 #define UART_GET_IP_NAME(port)	__raw_readl((port)->membase + ATMEL_US_NAME)
+#define UART_GET_IP_VERSION(port) __raw_readl((port)->membase + ATMEL_US_VERSION)
 
  /* PDC registers */
 #define UART_PUT_PTCR(port,v)	__raw_writel(v, (port)->membase + ATMEL_PDC_PTCR)
@@ -113,9 +114,6 @@ static void atmel_stop_rx(struct uart_port *port);
 #define UART_PUT_TPR(port,v)	__raw_writel(v, (port)->membase + ATMEL_PDC_TPR)
 #define UART_PUT_TCR(port,v)	__raw_writel(v, (port)->membase + ATMEL_PDC_TCR)
 #define UART_GET_TCR(port)	__raw_readl((port)->membase + ATMEL_PDC_TCR)
-
-static int (*atmel_open_hook)(struct uart_port *);
-static void (*atmel_close_hook)(struct uart_port *);
 
 struct atmel_dma_buffer {
 	unsigned char	*buf;
@@ -824,9 +822,6 @@ static void atmel_release_rx_dma(struct uart_port *port)
 	atmel_port->desc_rx = NULL;
 	atmel_port->chan_rx = NULL;
 	atmel_port->cookie_rx = -EINVAL;
-
-	if (!atmel_port->is_usart)
-		del_timer_sync(&atmel_port->uart_timer);
 }
 
 static void atmel_rx_from_dma(struct uart_port *port)
@@ -1228,9 +1223,6 @@ static void atmel_release_rx_pdc(struct uart_port *port)
 				 DMA_FROM_DEVICE);
 		kfree(pdc->buf);
 	}
-
-	if (!atmel_port->is_usart)
-		del_timer_sync(&atmel_port->uart_timer);
 }
 
 static void atmel_rx_from_pdc(struct uart_port *port)
@@ -1499,10 +1491,11 @@ static void atmel_set_ops(struct uart_port *port)
 /*
  * Get ip name usart or uart
  */
-static int atmel_get_ip_name(struct uart_port *port)
+static void atmel_get_ip_name(struct uart_port *port)
 {
 	struct atmel_uart_port *atmel_port = to_atmel_uart_port(port);
 	int name = UART_GET_IP_NAME(port);
+	u32 version;
 	int usart, uart;
 	/* usart and uart ascii */
 	usart = 0x55534152;
@@ -1517,11 +1510,23 @@ static int atmel_get_ip_name(struct uart_port *port)
 		dev_dbg(port->dev, "This is uart\n");
 		atmel_port->is_usart = false;
 	} else {
-		dev_err(port->dev, "Not supported ip name, set to uart\n");
-		return -EINVAL;
+		/* fallback for older SoCs: use version field */
+		version = UART_GET_IP_VERSION(port);
+		switch (version) {
+		case 0x302:
+		case 0x10213:
+			dev_dbg(port->dev, "This version is usart\n");
+			atmel_port->is_usart = true;
+			break;
+		case 0x203:
+		case 0x10202:
+			dev_dbg(port->dev, "This version is uart\n");
+			atmel_port->is_usart = false;
+			break;
+		default:
+			dev_err(port->dev, "Not supported ip name nor version, set to uart\n");
+		}
 	}
-
-	return 0;
 }
 
 /*
@@ -1547,7 +1552,7 @@ static int atmel_startup(struct uart_port *port)
 	retval = request_irq(port->irq, atmel_interrupt, IRQF_SHARED,
 			tty ? tty->name : "atmel_serial", port);
 	if (retval) {
-		printk("atmel_serial: atmel_startup - Can't get irq\n");
+		dev_err(port->dev, "atmel_startup - Can't get irq\n");
 		return retval;
 	}
 
@@ -1567,17 +1572,6 @@ static int atmel_startup(struct uart_port *port)
 		if (retval < 0)
 			atmel_set_ops(port);
 	}
-	/*
-	 * If there is a specific "open" function (to register
-	 * control line interrupts)
-	 */
-	if (atmel_open_hook) {
-		retval = atmel_open_hook(port);
-		if (retval) {
-			free_irq(port->irq, port);
-			return retval;
-		}
-	}
 
 	/* Save current CSR for comparison in atmel_tasklet_func() */
 	atmel_port->irq_status_prev = UART_GET_CSR(port);
@@ -1590,12 +1584,13 @@ static int atmel_startup(struct uart_port *port)
 	/* enable xmit & rcvr */
 	UART_PUT_CR(port, ATMEL_US_TXEN | ATMEL_US_RXEN);
 
+	setup_timer(&atmel_port->uart_timer,
+			atmel_uart_timer_callback,
+			(unsigned long)port);
+
 	if (atmel_use_pdc_rx(port)) {
 		/* set UART timeout */
 		if (!atmel_port->is_usart) {
-			setup_timer(&atmel_port->uart_timer,
-					atmel_uart_timer_callback,
-					(unsigned long)port);
 			mod_timer(&atmel_port->uart_timer,
 					jiffies + uart_poll_timeout(port));
 		/* set USART timeout */
@@ -1610,9 +1605,6 @@ static int atmel_startup(struct uart_port *port)
 	} else if (atmel_use_dma_rx(port)) {
 		/* set UART timeout */
 		if (!atmel_port->is_usart) {
-			setup_timer(&atmel_port->uart_timer,
-					atmel_uart_timer_callback,
-					(unsigned long)port);
 			mod_timer(&atmel_port->uart_timer,
 					jiffies + uart_poll_timeout(port));
 		/* set USART timeout */
@@ -1636,11 +1628,29 @@ static int atmel_startup(struct uart_port *port)
 static void atmel_shutdown(struct uart_port *port)
 {
 	struct atmel_uart_port *atmel_port = to_atmel_uart_port(port);
+
 	/*
-	 * Ensure everything is stopped.
+	 * Prevent any tasklets being scheduled during
+	 * cleanup
+	 */
+	del_timer_sync(&atmel_port->uart_timer);
+
+	/*
+	 * Clear out any scheduled tasklets before
+	 * we destroy the buffers
+	 */
+	tasklet_kill(&atmel_port->tasklet);
+
+	/*
+	 * Ensure everything is stopped and
+	 * disable all interrupts, port and break condition.
 	 */
 	atmel_stop_rx(port);
 	atmel_stop_tx(port);
+
+	UART_PUT_CR(port, ATMEL_US_RSTSTA);
+	UART_PUT_IDR(port, -1);
+
 
 	/*
 	 * Shut-down the DMA.
@@ -1651,22 +1661,15 @@ static void atmel_shutdown(struct uart_port *port)
 		atmel_port->release_tx(port);
 
 	/*
-	 * Disable all interrupts, port and break condition.
+	 * Reset ring buffer pointers
 	 */
-	UART_PUT_CR(port, ATMEL_US_RSTSTA);
-	UART_PUT_IDR(port, -1);
+	atmel_port->rx_ring.head = 0;
+	atmel_port->rx_ring.tail = 0;
 
 	/*
 	 * Free the interrupt
 	 */
 	free_irq(port->irq, port);
-
-	/*
-	 * If there is a specific "close" function (to unregister
-	 * control line interrupts)
-	 */
-	if (atmel_close_hook)
-		atmel_close_hook(port);
 }
 
 /*
@@ -1714,7 +1717,7 @@ static void atmel_serial_pm(struct uart_port *port, unsigned int state,
 		clk_disable_unprepare(atmel_port->clk);
 		break;
 	default:
-		printk(KERN_ERR "atmel_serial: unknown pm %d\n", state);
+		dev_err(port->dev, "atmel_serial: unknown pm %d\n", state);
 	}
 }
 
@@ -1829,13 +1832,10 @@ static void atmel_set_termios(struct uart_port *port, struct ktermios *termios,
 	mode &= ~ATMEL_US_USMODE;
 
 	if (atmel_port->rs485.flags & SER_RS485_ENABLED) {
-		dev_dbg(port->dev, "Setting UART to RS485\n");
 		if ((atmel_port->rs485.delay_rts_after_send) > 0)
 			UART_PUT_TTGR(port,
 					atmel_port->rs485.delay_rts_after_send);
 		mode |= ATMEL_US_USMODE_RS485;
-	} else {
-		dev_dbg(port->dev, "Setting UART to RS232\n");
 	}
 
 	/* set the parity, stop bits and data size */
@@ -2405,9 +2405,7 @@ static int atmel_serial_probe(struct platform_device *pdev)
 	/*
 	 * Get port name of usart or uart
 	 */
-	ret = atmel_get_ip_name(&port->uart);
-	if (ret < 0)
-		goto err_add_port;
+	atmel_get_ip_name(&port->uart);
 
 	return 0;
 
@@ -2429,11 +2427,12 @@ static int atmel_serial_remove(struct platform_device *pdev)
 	struct atmel_uart_port *atmel_port = to_atmel_uart_port(port);
 	int ret = 0;
 
+	tasklet_kill(&atmel_port->tasklet);
+
 	device_init_wakeup(&pdev->dev, 0);
 
 	ret = uart_remove_one_port(&atmel_uart, port);
 
-	tasklet_kill(&atmel_port->tasklet);
 	kfree(atmel_port->rx_ring.buf);
 
 	/* "port" is allocated statically, so we shouldn't free it */

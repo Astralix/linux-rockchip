@@ -21,9 +21,8 @@
 		reg = <0x70000000 0x40000000>;
 	};
 
-	display@di0 {
+	display0: display@di0 {
 		compatible = "fsl,imx-parallel-display";
-		crtcs = <&ipu 0>;
 		interface-pix-fmt = "rgb565";
 		pinctrl-names = "default";
 		pinctrl-0 = <&pinctrl_ipu_disp0_1>;
@@ -46,6 +45,12 @@
 				pixelclk-active = <0>;
 			};
 		};
+
+		port {
+			display0_in: endpoint {
+				remote-endpoint = <&ipu_di0_disp0>;
+			};
+		};
 	};
 
 	gpio-keys {
@@ -55,19 +60,20 @@
 			label = "Power Button";
 			gpios = <&gpio1 8 0>;
 			linux,code = <116>; /* KEY_POWER */
-			gpio-key,wakeup;
 		};
 
 		volume-up {
 			label = "Volume Up";
 			gpios = <&gpio2 14 0>;
 			linux,code = <115>; /* KEY_VOLUMEUP */
+			gpio-key,wakeup;
 		};
 
 		volume-down {
 			label = "Volume Down";
 			gpios = <&gpio2 15 0>;
 			linux,code = <114>; /* KEY_VOLUMEDOWN */
+			gpio-key,wakeup;
 		};
 	};
 
@@ -122,8 +128,11 @@
 &esdhc1 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pinctrl_esdhc1_1>;
-	cd-gpios = <&gpio3 13 0>;
 	status = "okay";
+};
+
+&ipu_di0_disp0 {
+	remote-endpoint = <&display0_in>;
 };
 
 &ssi2 {
@@ -136,6 +145,7 @@
 	pinctrl-0 = <&pinctrl_esdhc3_1>;
 	cd-gpios = <&gpio3 11 0>;
 	wp-gpios = <&gpio3 12 0>;
+	bus-width = <8>;
 	status = "okay";
 };
 
@@ -152,7 +162,6 @@
 				MX53_PAD_PATA_DATA15__GPIO2_15    0x80000000
 				MX53_PAD_EIM_DA11__GPIO3_11       0x80000000
 				MX53_PAD_EIM_DA12__GPIO3_12       0x80000000
-				MX53_PAD_EIM_DA13__GPIO3_13       0x80000000
 				MX53_PAD_PATA_DA_0__GPIO7_6       0x80000000
 				MX53_PAD_PATA_DA_2__GPIO7_8	  0x80000000
 				MX53_PAD_GPIO_16__GPIO7_11        0x80000000
@@ -318,5 +327,6 @@
 };
 
 &usbotg {
-       status = "okay";
+	dr_mode = "peripheral";
+	status = "okay";
 };

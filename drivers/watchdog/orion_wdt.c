@@ -16,10 +16,8 @@
 #include <linux/moduleparam.h>
 #include <linux/types.h>
 #include <linux/kernel.h>
-#include <linux/miscdevice.h>
 #include <linux/platform_device.h>
 #include <linux/watchdog.h>
-#include <linux/init.h>
 #include <linux/io.h>
 #include <linux/spinlock.h>
 #include <linux/clk.h>
@@ -207,7 +205,7 @@ static struct platform_driver orion_wdt_driver = {
 	.driver		= {
 		.owner	= THIS_MODULE,
 		.name	= "orion_wdt",
-		.of_match_table = of_match_ptr(orion_wdt_of_match_table),
+		.of_match_table = orion_wdt_of_match_table,
 	},
 };
 
@@ -225,4 +223,3 @@ MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default="
 
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:orion_wdt");
-MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);

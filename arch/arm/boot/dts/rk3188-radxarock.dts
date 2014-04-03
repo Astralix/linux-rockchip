@@ -76,5 +76,36 @@
 			};
 		};
 
+		i2c@0 {
+			compatible = "i2c-gpio";
+			gpios = <&gpio1 26 0   /* sda */
+				 &gpio1 27 0>; /* scl */
+			i2c-gpio,sda-open-drain;
+			i2c-gpio,scl-open-drain;
+			i2c-gpio,delay-us = <2>;	/* ~100 kHz */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			hym8563@51 {
+				compatible = "haoyu,hym8563";
+				reg = <0x51>;
+
+				interrupt-parent = <&gpio0>;
+				interrupts = <13 IRQ_TYPE_EDGE_FALLING>; /* gpio0_b5 */
+
+				gpios = <&gpio0 13 0>;
+
+				pinctrl-names = "default";
+				pinctrl-0 = <&hym8563_int>;
+			};
+		};
+
+		pinctrl@20008000 {
+			hym8563 {
+				hym8563_int: hym8563-int {
+					rockchip,pins = <RK_GPIO0 0 RK_FUNC_1 &pcfg_pull_up>;
+				};
+			};
+		};
 	};
 };

@@ -61,6 +61,12 @@ struct read_event {
 	u64 id;
 };
 
+struct throttle_event {
+	struct perf_event_header header;
+	u64 time;
+	u64 id;
+	u64 stream_id;
+};
 
 #define PERF_SAMPLE_MASK				\
 	(PERF_SAMPLE_IP | PERF_SAMPLE_TID |		\
@@ -69,6 +75,9 @@ struct read_event {
 	 PERF_SAMPLE_CPU | PERF_SAMPLE_PERIOD |		\
 	 PERF_SAMPLE_IDENTIFIER)
 
+/* perf sample has 16 bits size limit */
+#define PERF_SAMPLE_MAX_SIZE (1 << 16)
+
 struct sample_event {
 	struct perf_event_header        header;
 	u64 array[];
@@ -76,6 +85,7 @@ struct sample_event {
 
 struct regs_dump {
 	u64 abi;
+	u64 mask;
 	u64 *regs;
 };
 
@@ -111,6 +121,7 @@ struct perf_sample {
 	u64 stream_id;
 	u64 period;
 	u64 weight;
+	u64 transaction;
 	u32 cpu;
 	u32 raw_size;
 	u64 data_src;
@@ -177,6 +188,7 @@ union perf_event {
 	struct fork_event		fork;
 	struct lost_event		lost;
 	struct read_event		read;
+	struct throttle_event		throttle;
 	struct sample_event		sample;
 	struct attr_event		attr;
 	struct event_type_event		event_type;
@@ -197,14 +209,13 @@ typedef int (*perf_event__handler_t)(struct perf_tool *tool,
 int perf_event__synthesize_thread_map(struct perf_tool *tool,
 				      struct thread_map *threads,
 				      perf_event__handler_t process,
-				      struct machine *machine);
+				      struct machine *machine, bool mmap_data);
 int perf_event__synthesize_threads(struct perf_tool *tool,
 				   perf_event__handler_t process,
-				   struct machine *machine);
+				   struct machine *machine, bool mmap_data);
 int perf_event__synthesize_kernel_mmap(struct perf_tool *tool,
 				       perf_event__handler_t process,
-				       struct machine *machine,
-				       const char *symbol_name);
+				       struct machine *machine);
 
 int perf_event__synthesize_modules(struct perf_tool *tool,
 				   perf_event__handler_t process,
@@ -240,7 +251,8 @@ int perf_event__process(struct perf_tool *tool,
 			struct machine *machine);
 
 struct addr_location;
-int perf_event__preprocess_sample(const union perf_event *self,
+
+int perf_event__preprocess_sample(const union perf_event *event,
 				  struct machine *machine,
 				  struct addr_location *al,
 				  struct perf_sample *sample);
@@ -248,16 +260,26 @@ int perf_event__preprocess_sample(const union perf_event *self,
 const char *perf_event__name(unsigned int id);
 
 size_t perf_event__sample_event_size(const struct perf_sample *sample, u64 type,
-				     u64 sample_regs_user, u64 read_format);
+				     u64 read_format);
 int perf_event__synthesize_sample(union perf_event *event, u64 type,
-				  u64 sample_regs_user, u64 read_format,
+				  u64 read_format,
 				  const struct perf_sample *sample,
 				  bool swapped);
+
+int perf_event__synthesize_mmap_events(struct perf_tool *tool,
+				       union perf_event *event,
+				       pid_t pid, pid_t tgid,
+				       perf_event__handler_t process,
+				       struct machine *machine,
+				       bool mmap_data);
 
 size_t perf_event__fprintf_comm(union perf_event *event, FILE *fp);
 size_t perf_event__fprintf_mmap(union perf_event *event, FILE *fp);
 size_t perf_event__fprintf_mmap2(union perf_event *event, FILE *fp);
 size_t perf_event__fprintf_task(union perf_event *event, FILE *fp);
 size_t perf_event__fprintf(union perf_event *event, FILE *fp);
+
+u64 kallsyms__get_function_start(const char *kallsyms_filename,
+				 const char *symbol_name);
 
 #endif /* __PERF_RECORD_H */

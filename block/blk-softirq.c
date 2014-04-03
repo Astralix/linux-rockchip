@@ -23,20 +23,20 @@ static void blk_done_softirq(struct softirq_action *h)
 	struct list_head *cpu_list, local_list;
 
 	local_irq_disable();
-	cpu_list = &__get_cpu_var(blk_cpu_done);
+	cpu_list = this_cpu_ptr(&blk_cpu_done);
 	list_replace_init(cpu_list, &local_list);
 	local_irq_enable();
 
 	while (!list_empty(&local_list)) {
 		struct request *rq;
 
-		rq = list_entry(local_list.next, struct request, csd.list);
-		list_del_init(&rq->csd.list);
+		rq = list_entry(local_list.next, struct request, queuelist);
+		list_del_init(&rq->queuelist);
 		rq->q->softirq_done_fn(rq);
 	}
 }
 
-#if defined(CONFIG_SMP) && defined(CONFIG_USE_GENERIC_SMP_HELPERS)
+#ifdef CONFIG_SMP
 static void trigger_softirq(void *data)
 {
 	struct request *rq = data;
@@ -44,10 +44,15 @@ static void trigger_softirq(void *data)
 	struct list_head *list;
 
 	local_irq_save(flags);
-	list = &__get_cpu_var(blk_cpu_done);
-	list_add_tail(&rq->csd.list, list);
+	list = this_cpu_ptr(&blk_cpu_done);
+	/*
+	 * We reuse queuelist for a list of requests to process. Since the
+	 * queuelist is used by the block layer only for requests waiting to be
+	 * submitted to the device it is unused now.
+	 */
+	list_add_tail(&rq->queuelist, list);
 
-	if (list->next == &rq->csd.list)
+	if (list->next == &rq->queuelist)
 		raise_softirq_irqoff(BLOCK_SOFTIRQ);
 
 	local_irq_restore(flags);
@@ -65,13 +70,13 @@ static int raise_blk_irq(int cpu, struct request *rq)
 		data->info = rq;
 		data->flags = 0;
 
-		__smp_call_function_single(cpu, data, 0);
+		smp_call_function_single_async(cpu, data);
 		return 0;
 	}
 
 	return 1;
 }
-#else /* CONFIG_SMP && CONFIG_USE_GENERIC_SMP_HELPERS */
+#else /* CONFIG_SMP */
 static int raise_blk_irq(int cpu, struct request *rq)
 {
 	return 1;
@@ -90,7 +95,7 @@ static int blk_cpu_notify(struct notifier_block *self, unsigned long action,
 
 		local_irq_disable();
 		list_splice_init(&per_cpu(blk_cpu_done, cpu),
-				 &__get_cpu_var(blk_cpu_done));
+				 this_cpu_ptr(&blk_cpu_done));
 		raise_softirq_irqoff(BLOCK_SOFTIRQ);
 		local_irq_enable();
 	}
@@ -135,8 +140,8 @@ void __blk_complete_request(struct request *req)
 	if (ccpu == cpu || shared) {
 		struct list_head *list;
 do_local:
-		list = &__get_cpu_var(blk_cpu_done);
-		list_add_tail(&req->csd.list, list);
+		list = this_cpu_ptr(&blk_cpu_done);
+		list_add_tail(&req->queuelist, list);
 
 		/*
 		 * if the list only contains our just added request,
@@ -144,7 +149,7 @@ do_local:
 		 * entries there, someone already raised the irq but it
 		 * hasn't run yet.
 		 */
-		if (list->next == &req->csd.list)
+		if (list->next == &req->queuelist)
 			raise_softirq_irqoff(BLOCK_SOFTIRQ);
 	} else if (raise_blk_irq(ccpu, req))
 		goto do_local;

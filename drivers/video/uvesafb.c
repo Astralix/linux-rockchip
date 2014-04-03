@@ -190,7 +190,7 @@ static int uvesafb_exec(struct uvesafb_ktask *task)
 	uvfb_tasks[seq] = task;
 	mutex_unlock(&uvfb_lock);
 
-	err = cn_netlink_send(m, 0, GFP_KERNEL);
+	err = cn_netlink_send(m, 0, 0, GFP_KERNEL);
 	if (err == -ESRCH) {
 		/*
 		 * Try to start the userspace helper if sending
@@ -204,7 +204,7 @@ static int uvesafb_exec(struct uvesafb_ktask *task)
 					"helper is installed and executable\n");
 		} else {
 			v86d_started = 1;
-			err = cn_netlink_send(m, 0, gfp_any());
+			err = cn_netlink_send(m, 0, 0, gfp_any());
 			if (err == -ENOBUFS)
 				err = 0;
 		}
@@ -233,8 +233,7 @@ out:
 static void uvesafb_free(struct uvesafb_ktask *task)
 {
 	if (task) {
-		if (task->done)
-			kfree(task->done);
+		kfree(task->done);
 		kfree(task);
 	}
 }
@@ -1332,8 +1331,8 @@ setmode:
 				FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
 	info->fix.line_length = mode->bytes_per_scan_line;
 
-out:	if (crtc != NULL)
-		kfree(crtc);
+out:
+	kfree(crtc);
 	uvesafb_free(task);
 
 	return err;
@@ -1771,13 +1770,11 @@ static int uvesafb_probe(struct platform_device *dev)
 			"using %dk, total %dk\n", info->fix.smem_start,
 			info->screen_base, info->fix.smem_len/1024,
 			par->vbe_ib.total_memory * 64);
-	printk(KERN_INFO "fb%d: %s frame buffer device\n", info->node,
-			info->fix.id);
+	fb_info(info, "%s frame buffer device\n", info->fix.id);
 
 	err = sysfs_create_group(&dev->dev.kobj, &uvesafb_dev_attgrp);
 	if (err != 0)
-		printk(KERN_WARNING "fb%d: failed to register attributes\n",
-			info->node);
+		fb_warn(info, "failed to register attributes\n");
 
 	return 0;
 
@@ -1793,8 +1790,7 @@ out_mode:
 	fb_destroy_modedb(info->monspecs.modedb);
 	fb_dealloc_cmap(&info->cmap);
 out:
-	if (par->vbe_modes)
-		kfree(par->vbe_modes);
+	kfree(par->vbe_modes);
 
 	framebuffer_release(info);
 	return err;
@@ -1817,12 +1813,9 @@ static int uvesafb_remove(struct platform_device *dev)
 		fb_dealloc_cmap(&info->cmap);
 
 		if (par) {
-			if (par->vbe_modes)
-				kfree(par->vbe_modes);
-			if (par->vbe_state_orig)
-				kfree(par->vbe_state_orig);
-			if (par->vbe_state_saved)
-				kfree(par->vbe_state_saved);
+			kfree(par->vbe_modes);
+			kfree(par->vbe_state_orig);
+			kfree(par->vbe_state_saved);
 		}
 
 		framebuffer_release(info);

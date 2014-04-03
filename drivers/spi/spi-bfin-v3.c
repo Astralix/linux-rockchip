@@ -822,7 +822,8 @@ static int bfin_spi_probe(struct platform_device *pdev)
 	master->cleanup = bfin_spi_cleanup;
 	master->setup = bfin_spi_setup;
 	master->transfer_one_message = bfin_spi_transfer_one_message;
-	master->bits_per_word_mask = BIT(32 - 1) | BIT(16 - 1) | BIT(8 - 1);
+	master->bits_per_word_mask = SPI_BPW_MASK(32) | SPI_BPW_MASK(16) |
+				     SPI_BPW_MASK(8);
 
 	drv_data = spi_master_get_devdata(master);
 	drv_data->master = master;
@@ -867,7 +868,7 @@ static int bfin_spi_probe(struct platform_device *pdev)
 	tasklet_init(&drv_data->pump_transfers,
 			bfin_spi_pump_transfers, (unsigned long)drv_data);
 	/* register with the SPI framework */
-	ret = spi_register_master(master);
+	ret = devm_spi_register_master(dev, master);
 	if (ret) {
 		dev_err(dev, "can not  register spi master\n");
 		goto err_free_peripheral;
@@ -898,7 +899,6 @@ static int bfin_spi_remove(struct platform_device *pdev)
 	free_dma(drv_data->rx_dma);
 	free_dma(drv_data->tx_dma);
 
-	spi_unregister_master(drv_data->master);
 	return 0;
 }
 

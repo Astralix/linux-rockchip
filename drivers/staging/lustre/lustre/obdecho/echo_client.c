@@ -997,8 +997,8 @@ static struct lu_device *echo_device_free(const struct lu_env *env,
 		spin_unlock(&ec->ec_lock);
 		CERROR("echo_client still has objects at cleanup time, "
 		       "wait for 1 second\n");
-		schedule_timeout_and_set_state(TASK_UNINTERRUPTIBLE,
-						   cfs_time_seconds(1));
+		set_current_state(TASK_UNINTERRUPTIBLE);
+		schedule_timeout(cfs_time_seconds(1));
 		lu_site_purge(env, &ed->ed_site->cs_lu, -1);
 		spin_lock(&ec->ec_lock);
 	}
@@ -1089,7 +1089,7 @@ static struct echo_object *cl_echo_object_find(struct echo_device *d,
 		} else {
 			struct lustre_md *md;
 			md = &info->eti_md;
-			memset(md, 0, sizeof *md);
+			memset(md, 0, sizeof(*md));
 			md->lsm = lsm;
 			conf->eoc_cl.u.coc_md = md;
 		}
@@ -1106,7 +1106,7 @@ static struct echo_object *cl_echo_object_find(struct echo_device *d,
 	/* coverity[overrun-buffer-val] */
 	obj = cl_object_find(env, echo_dev2cl(d), fid, &conf->eoc_cl);
 	if (IS_ERR(obj))
-		GOTO(out, eco = (void*)obj);
+		GOTO(out, eco = (void *)obj);
 
 	eco = cl2echo_obj(obj);
 	if (eco->eo_deleted) {
@@ -1387,7 +1387,7 @@ echo_copyout_lsm (struct lov_stripe_md *lsm, void *_ulsm, int ulsm_nob)
 	if (nob > ulsm_nob)
 		return (-EINVAL);
 
-	if (copy_to_user (ulsm, lsm, sizeof(ulsm)))
+	if (copy_to_user (ulsm, lsm, sizeof(*ulsm)))
 		return (-EFAULT);
 
 	for (i = 0; i < lsm->lsm_stripe_count; i++) {
@@ -2764,7 +2764,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 
 	switch (cmd) {
 	case OBD_IOC_CREATE:		    /* may create echo object */
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO (out, rc = -EPERM);
 
 		rc = echo_create_object(env, ed, 1, oa, data->ioc_pbuf1,
@@ -2778,7 +2778,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		int dirlen;
 		__u64 id;
 
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO(out, rc = -EPERM);
 
 		count = data->ioc_count;
@@ -2806,7 +2806,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		__u64	    seq;
 		int	      max_count;
 
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO(out, rc = -EPERM);
 
 		cl_env = cl_env_get(&refcheck);
@@ -2838,7 +2838,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		GOTO(out, rc);
 	}
 	case OBD_IOC_DESTROY:
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO (out, rc = -EPERM);
 
 		rc = echo_get_object(&eco, ed, oa);
@@ -2863,7 +2863,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		GOTO(out, rc);
 
 	case OBD_IOC_SETATTR:
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO (out, rc = -EPERM);
 
 		rc = echo_get_object(&eco, ed, oa);
@@ -2878,7 +2878,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		GOTO(out, rc);
 
 	case OBD_IOC_BRW_WRITE:
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO (out, rc = -EPERM);
 
 		rw = OBD_BRW_WRITE;
@@ -2897,7 +2897,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		GOTO(out, rc);
 
 	case ECHO_IOC_SET_STRIPE:
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO (out, rc = -EPERM);
 
 		if (data->ioc_pbuf1 == NULL) {  /* unset */
@@ -2914,7 +2914,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		GOTO (out, rc);
 
 	case ECHO_IOC_ENQUEUE:
-		if (!cfs_capable(CFS_CAP_SYS_ADMIN))
+		if (!capable(CFS_CAP_SYS_ADMIN))
 			GOTO (out, rc = -EPERM);
 
 		rc = echo_client_enqueue(exp, oa,

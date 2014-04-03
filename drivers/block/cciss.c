@@ -1189,6 +1189,7 @@ static int cciss_ioctl32_passthru(struct block_device *bdev, fmode_t mode,
 	int err;
 	u32 cp;
 
+	memset(&arg64, 0, sizeof(arg64));
 	err = 0;
 	err |=
 	    copy_from_user(&arg64.LUN_info, &arg32->LUN_info,
@@ -2807,7 +2808,7 @@ resend_cmd2:
 		/* erase the old error information */
 		memset(c->err_info, 0, sizeof(ErrorInfo_struct));
 		return_status = IO_OK;
-		INIT_COMPLETION(wait);
+		reinit_completion(&wait);
 		goto resend_cmd2;
 	}
 
@@ -3668,7 +3669,7 @@ static int add_to_scan_list(struct ctlr_info *h)
 		}
 	}
 	if (!found && !h->busy_scanning) {
-		INIT_COMPLETION(h->scan_wait);
+		reinit_completion(&h->scan_wait);
 		list_add_tail(&h->scan_list, &scan_q);
 		ret = 1;
 	}
@@ -4091,11 +4092,9 @@ static void cciss_interrupt_mode(ctlr_info_t *h)
 		if (err > 0) {
 			dev_warn(&h->pdev->dev,
 				"only %d MSI-X vectors available\n", err);
-			goto default_int_mode;
 		} else {
 			dev_warn(&h->pdev->dev,
 				"MSI-X init failed %d\n", err);
-			goto default_int_mode;
 		}
 	}
 	if (pci_find_capability(h->pdev, PCI_CAP_ID_MSI)) {
@@ -5003,7 +5002,7 @@ reinit_after_soft_reset:
 
 	i = alloc_cciss_hba(pdev);
 	if (i < 0)
-		return -1;
+		return -ENOMEM;
 
 	h = hba[i];
 	h->pdev = pdev;
@@ -5182,7 +5181,7 @@ reinit_after_soft_reset:
 	rebuild_lun_table(h, 1, 0);
 	cciss_engage_scsi(h);
 	h->busy_initializing = 0;
-	return 1;
+	return 0;
 
 clean4:
 	cciss_free_cmd_pool(h);
@@ -5204,7 +5203,7 @@ clean_no_release_regions:
 	 */
 	pci_set_drvdata(pdev, NULL);
 	free_hba(h);
-	return -1;
+	return -ENODEV;
 }
 
 static void cciss_shutdown(struct pci_dev *pdev)

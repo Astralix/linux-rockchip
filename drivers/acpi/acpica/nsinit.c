@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2013, Intel Corp.
+ * Copyright (C) 2000 - 2014, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -213,7 +213,7 @@ acpi_status acpi_ns_initialize_devices(void)
 
 	return_ACPI_STATUS(status);
 
-      error_exit:
+error_exit:
 	ACPI_EXCEPTION((AE_INFO, status, "During device initialization"));
 	return_ACPI_STATUS(status);
 }

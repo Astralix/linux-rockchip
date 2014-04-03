@@ -43,6 +43,7 @@ _TIF_WORK_INT = (_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_NEED_RESCHED | \
 		 _TIF_MCCK_PENDING)
 _TIF_TRACE    = (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | _TIF_SECCOMP | \
 		 _TIF_SYSCALL_TRACEPOINT)
+_TIF_TRANSFER = (_TIF_MCCK_PENDING | _TIF_TLB_WAIT)
 
 STACK_SHIFT = PAGE_SHIFT + THREAD_ORDER
 STACK_SIZE  = 1 << STACK_SHIFT
@@ -159,10 +160,12 @@ ENTRY(__switch_to)
 	lctl	%c4,%c4,__TASK_pid(%r3)		# load pid to control reg. 4
 	mvc	__LC_CURRENT_PID(4,%r0),__TASK_pid(%r3)	# store pid of next
 	l	%r15,__THREAD_ksp(%r3)		# load kernel stack of next
-	tm	__TI_flags+3(%r4),_TIF_MCCK_PENDING # machine check pending?
+	lhi	%r6,_TIF_TRANSFER		# transfer TIF bits
+	n	%r6,__TI_flags(%r4)		# isolate TIF bits
 	jz	0f
-	ni	__TI_flags+3(%r4),255-_TIF_MCCK_PENDING	# clear flag in prev
-	oi	__TI_flags+3(%r5),_TIF_MCCK_PENDING	# set it in next
+	o	%r6,__TI_flags(%r5)		# set TIF bits of next
+	st	%r6,__TI_flags(%r5)
+	ni	__TI_flags+3(%r4),255-_TIF_TRANSFER # clear TIF bits of prev
 0:	lm	%r6,%r15,__SF_GPRS(%r15)	# load gprs of next task
 	br	%r14
 
@@ -266,6 +269,7 @@ sysc_sigpending:
 	tm	__TI_flags+3(%r12),_TIF_SYSCALL
 	jno	sysc_return
 	lm	%r2,%r7,__PT_R2(%r11)	# load svc arguments
+	l	%r10,__TI_sysc_table(%r12)	# 31 bit system call table
 	xr	%r8,%r8			# svc 0 returns -ENOSYS
 	clc	__PT_INT_CODE+2(2,%r11),BASED(.Lnr_syscalls+2)
 	jnl	sysc_nr_ok		# invalid svc number -> do svc 0

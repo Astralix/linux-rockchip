@@ -15,8 +15,6 @@
 #include <linux/linkage.h>
 #include <linux/init.h>
 
-	__CPUINIT
-
 ENTRY(rockchip_secondary_startup)
 	bl	v7_invalidate_l1
 	b	secondary_startup

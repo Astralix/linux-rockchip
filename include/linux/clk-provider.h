@@ -29,6 +29,7 @@
 #define CLK_IS_BASIC		BIT(5) /* Basic clk, can't do a to_clk_foo() */
 #define CLK_GET_RATE_NOCACHE	BIT(6) /* do not use the cached clk rate */
 #define CLK_SET_RATE_NO_REPARENT BIT(7) /* don't re-parent on rate change */
+#define CLK_GET_ACCURACY_NOCACHE BIT(8) /* do not use the cached clk accuracy */
 
 struct clk_hw;
 
@@ -108,6 +109,25 @@ struct clk_hw;
  *		which is likely helpful for most .set_rate implementation.
  *		Returns 0 on success, -EERROR otherwise.
  *
+ * @recalc_accuracy: Recalculate the accuracy of this clock. The clock accuracy
+ *		is expressed in ppb (parts per billion). The parent accuracy is
+ *		an input parameter.
+ *		Returns the calculated accuracy.  Optional - if	this op is not
+ *		set then clock accuracy will be initialized to parent accuracy
+ *		or 0 (perfect clock) if clock has no parent.
+ *
+ * @set_rate_and_parent: Change the rate and the parent of this clock. The
+ *		requested rate is specified by the second argument, which
+ *		should typically be the return of .round_rate call.  The
+ *		third argument gives the parent rate which is likely helpful
+ *		for most .set_rate_and_parent implementation. The fourth
+ *		argument gives the parent index. This callback is optional (and
+ *		unnecessary) for clocks with 0 or 1 parents as well as
+ *		for clocks that can tolerate switching the rate and the parent
+ *		separately via calls to .set_parent and .set_rate.
+ *		Returns 0 on success, -EERROR otherwise.
+ *
+ *
  * The clk_enable/clk_disable and clk_prepare/clk_unprepare pairs allow
  * implementations to split any work between atomic (enable) and sleepable
  * (prepare) contexts.  If enabling a clock requires code that might sleep,
@@ -139,6 +159,11 @@ struct clk_ops {
 	u8		(*get_parent)(struct clk_hw *hw);
 	int		(*set_rate)(struct clk_hw *hw, unsigned long,
 				    unsigned long);
+	int		(*set_rate_and_parent)(struct clk_hw *hw,
+				    unsigned long rate,
+				    unsigned long parent_rate, u8 index);
+	unsigned long	(*recalc_accuracy)(struct clk_hw *hw,
+					   unsigned long parent_accuracy);
 	void		(*init)(struct clk_hw *hw);
 };
 
@@ -194,6 +219,7 @@ struct clk_hw {
 struct clk_fixed_rate {
 	struct		clk_hw hw;
 	unsigned long	fixed_rate;
+	unsigned long	fixed_accuracy;
 	u8		flags;
 };
 
@@ -201,6 +227,9 @@ extern const struct clk_ops clk_fixed_rate_ops;
 struct clk *clk_register_fixed_rate(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
 		unsigned long fixed_rate);
+struct clk *clk_register_fixed_rate_with_accuracy(struct device *dev,
+		const char *name, const char *parent_name, unsigned long flags,
+		unsigned long fixed_rate, unsigned long fixed_accuracy);
 
 void of_fixed_clk_setup(struct device_node *np);
 
@@ -241,8 +270,6 @@ struct clk *clk_register_gate(struct device *dev, const char *name,
 		void __iomem *reg, u8 bit_idx,
 		u8 clk_gate_flags, spinlock_t *lock);
 
-void of_gate_clk_setup(struct device_node *node);
-
 struct clk_div_table {
 	unsigned int	val;
 	unsigned int	div;
@@ -277,12 +304,14 @@ struct clk_div_table {
  *   of this register, and mask of divider bits are in higher 16-bit of this
  *   register.  While setting the divider bits, higher 16-bit should also be
  *   updated to indicate changing divider bits.
+ * CLK_DIVIDER_READ_ONLY - The divider settings are preconfigured and should
+ *	not be changed by the clock framework.
  */
 struct clk_divider {
 	struct clk_hw	hw;
 	void __iomem	*reg;
 	u8		shift;
-	u32		mask;
+	u8		width;
 	u8		flags;
 	const struct clk_div_table	*table;
 	spinlock_t	*lock;
@@ -292,8 +321,10 @@ struct clk_divider {
 #define CLK_DIVIDER_POWER_OF_TWO	BIT(1)
 #define CLK_DIVIDER_ALLOW_ZERO		BIT(2)
 #define CLK_DIVIDER_HIWORD_MASK		BIT(3)
+#define CLK_DIVIDER_READ_ONLY		BIT(4)
 
 extern const struct clk_ops clk_divider_ops;
+extern const struct clk_ops clk_divider_ro_ops;
 struct clk *clk_register_divider(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
 		void __iomem *reg, u8 shift, u8 width,
@@ -303,8 +334,6 @@ struct clk *clk_register_divider_table(struct device *dev, const char *name,
 		void __iomem *reg, u8 shift, u8 width,
 		u8 clk_divider_flags, const struct clk_div_table *table,
 		spinlock_t *lock);
-
-void of_divider_clk_setup(struct device_node *node);
 
 /**
  * struct clk_mux - multiplexer clock
@@ -355,7 +384,7 @@ struct clk *clk_register_mux_table(struct device *dev, const char *name,
 		void __iomem *reg, u8 shift, u32 mask,
 		u8 clk_mux_flags, u32 *table, spinlock_t *lock);
 
-void of_mux_clk_setup(struct device_node *node);
+void of_fixed_factor_clk_setup(struct device_node *node);
 
 /**
  * struct clk_fixed_factor - fixed multiplier and divider clock
@@ -376,12 +405,9 @@ struct clk_fixed_factor {
 };
 
 extern struct clk_ops clk_fixed_factor_ops;
-
 struct clk *clk_register_fixed_factor(struct device *dev, const char *name,
 		const char *parent_name, unsigned long flags,
 		unsigned int mult, unsigned int div);
-
-void of_fixed_factor_clk_setup(struct device_node *node);
 
 /***
  * struct clk_composite - aggregate clock of mux, divider and gate clocks
@@ -440,6 +466,7 @@ struct clk *clk_get_parent_by_index(struct clk *clk, u8 index);
 unsigned int __clk_get_enable_count(struct clk *clk);
 unsigned int __clk_get_prepare_count(struct clk *clk);
 unsigned long __clk_get_rate(struct clk *clk);
+unsigned long __clk_get_accuracy(struct clk *clk);
 unsigned long __clk_get_flags(struct clk *clk);
 bool __clk_is_prepared(struct clk *clk);
 bool __clk_is_enabled(struct clk *clk);
@@ -464,6 +491,8 @@ struct clk_onecell_data {
 	struct clk **clks;
 	unsigned int clk_num;
 };
+
+extern struct of_device_id __clk_of_table;
 
 #define CLK_OF_DECLARE(name, compat, fn)			\
 	static const struct of_device_id __clk_of_table_##name	\
@@ -519,6 +548,20 @@ static inline const char *of_clk_get_parent_name(struct device_node *np,
  * for improved portability across platforms
  */
 
+#if IS_ENABLED(CONFIG_PPC)
+
+static inline u32 clk_readl(u32 __iomem *reg)
+{
+	return ioread32be(reg);
+}
+
+static inline void clk_writel(u32 val, u32 __iomem *reg)
+{
+	iowrite32be(val, reg);
+}
+
+#else	/* platform dependent I/O accessors */
+
 static inline u32 clk_readl(u32 __iomem *reg)
 {
 	return readl(reg);
@@ -528,6 +571,8 @@ static inline void clk_writel(u32 val, u32 __iomem *reg)
 {
 	writel(val, reg);
 }
+
+#endif	/* platform dependent I/O accessors */
 
 #endif /* CONFIG_COMMON_CLK */
 #endif /* CLK_PROVIDER_H */

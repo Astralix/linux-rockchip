@@ -21,6 +21,7 @@
 #include <linux/cpu.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_graph.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
@@ -73,6 +74,13 @@ int of_n_size_cells(struct device_node *np)
 	return OF_ROOT_NODE_SIZE_CELLS_DEFAULT;
 }
 EXPORT_SYMBOL(of_n_size_cells);
+
+#ifdef CONFIG_NUMA
+int __weak of_node_to_nid(struct device_node *np)
+{
+	return numa_node_id();
+}
+#endif
 
 #if defined(CONFIG_OF_DYNAMIC)
 /**
@@ -265,9 +273,9 @@ static bool __of_find_n_match_cpu_property(struct device_node *cpun,
 
 	ac = of_n_addr_cells(cpun);
 	cell = of_get_property(cpun, prop_name, &prop_len);
-	if (!cell)
+	if (!cell || !ac)
 		return false;
-	prop_len /= sizeof(*cell);
+	prop_len /= sizeof(*cell) * ac;
 	for (tid = 0; tid < prop_len; tid++) {
 		hwid = of_read_number(cell, ac);
 		if (arch_match_cpu_phys_id(cpu, hwid)) {
@@ -277,6 +285,31 @@ static bool __of_find_n_match_cpu_property(struct device_node *cpun,
 		}
 		cell += ac;
 	}
+	return false;
+}
+
+/*
+ * arch_find_n_match_cpu_physical_id - See if the given device node is
+ * for the cpu corresponding to logical cpu 'cpu'.  Return true if so,
+ * else false.  If 'thread' is non-NULL, the local thread number within the
+ * core is returned in it.
+ */
+bool __weak arch_find_n_match_cpu_physical_id(struct device_node *cpun,
+					      int cpu, unsigned int *thread)
+{
+	/* Check for non-standard "ibm,ppc-interrupt-server#s" property
+	 * for thread ids on PowerPC. If it doesn't exist fallback to
+	 * standard "reg" property.
+	 */
+	if (IS_ENABLED(CONFIG_PPC) &&
+	    __of_find_n_match_cpu_property(cpun,
+					   "ibm,ppc-interrupt-server#s",
+					   cpu, thread))
+		return true;
+
+	if (__of_find_n_match_cpu_property(cpun, "reg", cpu, thread))
+		return true;
+
 	return false;
 }
 
@@ -300,53 +333,82 @@ static bool __of_find_n_match_cpu_property(struct device_node *cpun,
  */
 struct device_node *of_get_cpu_node(int cpu, unsigned int *thread)
 {
-	struct device_node *cpun, *cpus;
+	struct device_node *cpun;
 
-	cpus = of_find_node_by_path("/cpus");
-	if (!cpus) {
-		pr_warn("Missing cpus node, bailing out\n");
-		return NULL;
-	}
-
-	for_each_child_of_node(cpus, cpun) {
-		if (of_node_cmp(cpun->type, "cpu"))
-			continue;
-		/* Check for non-standard "ibm,ppc-interrupt-server#s" property
-		 * for thread ids on PowerPC. If it doesn't exist fallback to
-		 * standard "reg" property.
-		 */
-		if (IS_ENABLED(CONFIG_PPC) &&
-			__of_find_n_match_cpu_property(cpun,
-				"ibm,ppc-interrupt-server#s", cpu, thread))
-			return cpun;
-		if (__of_find_n_match_cpu_property(cpun, "reg", cpu, thread))
+	for_each_node_by_type(cpun, "cpu") {
+		if (arch_find_n_match_cpu_physical_id(cpun, cpu, thread))
 			return cpun;
 	}
 	return NULL;
 }
 EXPORT_SYMBOL(of_get_cpu_node);
 
-/** Checks if the given "compat" string matches one of the strings in
- * the device's "compatible" property
+/**
+ * __of_device_is_compatible() - Check if the node matches given constraints
+ * @device: pointer to node
+ * @compat: required compatible string, NULL or "" for any match
+ * @type: required device_type value, NULL or "" for any match
+ * @name: required node name, NULL or "" for any match
+ *
+ * Checks if the given @compat, @type and @name strings match the
+ * properties of the given @device. A constraints can be skipped by
+ * passing NULL or an empty string as the constraint.
+ *
+ * Returns 0 for no match, and a positive integer on match. The return
+ * value is a relative score with larger values indicating better
+ * matches. The score is weighted for the most specific compatible value
+ * to get the highest score. Matching type is next, followed by matching
+ * name. Practically speaking, this results in the following priority
+ * order for matches:
+ *
+ * 1. specific compatible && type && name
+ * 2. specific compatible && type
+ * 3. specific compatible && name
+ * 4. specific compatible
+ * 5. general compatible && type && name
+ * 6. general compatible && type
+ * 7. general compatible && name
+ * 8. general compatible
+ * 9. type && name
+ * 10. type
+ * 11. name
  */
 static int __of_device_is_compatible(const struct device_node *device,
-				     const char *compat)
+				     const char *compat, const char *type, const char *name)
 {
-	const char* cp;
-	int cplen, l;
+	struct property *prop;
+	const char *cp;
+	int index = 0, score = 0;
 
-	cp = __of_get_property(device, "compatible", &cplen);
-	if (cp == NULL)
-		return 0;
-	while (cplen > 0) {
-		if (of_compat_cmp(cp, compat, strlen(compat)) == 0)
-			return 1;
-		l = strlen(cp) + 1;
-		cp += l;
-		cplen -= l;
+	/* Compatible match has highest priority */
+	if (compat && compat[0]) {
+		prop = __of_find_property(device, "compatible", NULL);
+		for (cp = of_prop_next_string(prop, NULL); cp;
+		     cp = of_prop_next_string(prop, cp), index++) {
+			if (of_compat_cmp(cp, compat, strlen(compat)) == 0) {
+				score = INT_MAX/2 - (index << 2);
+				break;
+			}
+		}
+		if (!score)
+			return 0;
 	}
 
-	return 0;
+	/* Matching type is better than matching name */
+	if (type && type[0]) {
+		if (!device->type || of_node_cmp(type, device->type))
+			return 0;
+		score += 2;
+	}
+
+	/* Matching name is a bit better than not */
+	if (name && name[0]) {
+		if (!device->name || of_node_cmp(name, device->name))
+			return 0;
+		score++;
+	}
+
+	return score;
 }
 
 /** Checks if the given "compat" string matches one of the strings in
@@ -359,7 +421,7 @@ int of_device_is_compatible(const struct device_node *device,
 	int res;
 
 	raw_spin_lock_irqsave(&devtree_lock, flags);
-	res = __of_device_is_compatible(device, compat);
+	res = __of_device_is_compatible(device, compat, NULL, NULL);
 	raw_spin_unlock_irqrestore(&devtree_lock, flags);
 	return res;
 }
@@ -398,6 +460,9 @@ static int __of_device_is_available(const struct device_node *device)
 {
 	const char *status;
 	int statlen;
+
+	if (!device)
+		return 0;
 
 	status = __of_get_property(device, "status", &statlen);
 	if (status == NULL)
@@ -662,10 +727,7 @@ struct device_node *of_find_compatible_node(struct device_node *from,
 	raw_spin_lock_irqsave(&devtree_lock, flags);
 	np = from ? from->allnext : of_allnodes;
 	for (; np; np = np->allnext) {
-		if (type
-		    && !(np->type && (of_node_cmp(np->type, type) == 0)))
-			continue;
-		if (__of_device_is_compatible(np, compatible) &&
+		if (__of_device_is_compatible(np, compatible, type, NULL) &&
 		    of_node_get(np))
 			break;
 	}
@@ -715,25 +777,22 @@ static
 const struct of_device_id *__of_match_node(const struct of_device_id *matches,
 					   const struct device_node *node)
 {
+	const struct of_device_id *best_match = NULL;
+	int score, best_score = 0;
+
 	if (!matches)
 		return NULL;
 
-	while (matches->name[0] || matches->type[0] || matches->compatible[0]) {
-		int match = 1;
-		if (matches->name[0])
-			match &= node->name
-				&& !strcmp(matches->name, node->name);
-		if (matches->type[0])
-			match &= node->type
-				&& !strcmp(matches->type, node->type);
-		if (matches->compatible[0])
-			match &= __of_device_is_compatible(node,
-							   matches->compatible);
-		if (match)
-			return matches;
-		matches++;
+	for (; matches->name[0] || matches->type[0] || matches->compatible[0]; matches++) {
+		score = __of_device_is_compatible(node, matches->compatible,
+						  matches->type, matches->name);
+		if (score > best_score) {
+			best_match = matches;
+			best_score = score;
+		}
 	}
-	return NULL;
+
+	return best_match;
 }
 
 /**
@@ -844,6 +903,38 @@ struct device_node *of_find_node_by_phandle(phandle handle)
 	return np;
 }
 EXPORT_SYMBOL(of_find_node_by_phandle);
+
+/**
+ * of_property_count_elems_of_size - Count the number of elements in a property
+ *
+ * @np:		device node from which the property value is to be read.
+ * @propname:	name of the property to be searched.
+ * @elem_size:	size of the individual element
+ *
+ * Search for a property in a device node and count the number of elements of
+ * size elem_size in it. Returns number of elements on sucess, -EINVAL if the
+ * property does not exist or its length does not match a multiple of elem_size
+ * and -ENODATA if the property does not have a value.
+ */
+int of_property_count_elems_of_size(const struct device_node *np,
+				const char *propname, int elem_size)
+{
+	struct property *prop = of_find_property(np, propname, NULL);
+
+	if (!prop)
+		return -EINVAL;
+	if (!prop->value)
+		return -ENODATA;
+
+	if (prop->length % elem_size != 0) {
+		pr_err("size of %s in node %s is not a multiple of %d\n",
+		       propname, np->full_name, elem_size);
+		return -EINVAL;
+	}
+
+	return prop->length / elem_size;
+}
+EXPORT_SYMBOL_GPL(of_property_count_elems_of_size);
 
 /**
  * of_find_property_value_of_size
@@ -1175,6 +1266,15 @@ int of_property_count_strings(struct device_node *np, const char *propname)
 	return i;
 }
 EXPORT_SYMBOL_GPL(of_property_count_strings);
+
+void of_print_phandle_args(const char *msg, const struct of_phandle_args *args)
+{
+	int i;
+	printk("%s %s", msg, of_node_full_name(args->np));
+	for (i = 0; i < args->args_count; i++)
+		printk(i ? ",%08x" : ":%08x", args->args[i]);
+	printk("\n");
+}
 
 static int __of_parse_phandle_with_args(const struct device_node *np,
 					const char *list_name,
@@ -1884,3 +1984,184 @@ int of_device_is_stdout_path(struct device_node *dn)
 	return of_stdout == dn;
 }
 EXPORT_SYMBOL_GPL(of_device_is_stdout_path);
+
+/**
+ *	of_find_next_cache_node - Find a node's subsidiary cache
+ *	@np:	node of type "cpu" or "cache"
+ *
+ *	Returns a node pointer with refcount incremented, use
+ *	of_node_put() on it when done.  Caller should hold a reference
+ *	to np.
+ */
+struct device_node *of_find_next_cache_node(const struct device_node *np)
+{
+	struct device_node *child;
+	const phandle *handle;
+
+	handle = of_get_property(np, "l2-cache", NULL);
+	if (!handle)
+		handle = of_get_property(np, "next-level-cache", NULL);
+
+	if (handle)
+		return of_find_node_by_phandle(be32_to_cpup(handle));
+
+	/* OF on pmac has nodes instead of properties named "l2-cache"
+	 * beneath CPU nodes.
+	 */
+	if (!strcmp(np->type, "cpu"))
+		for_each_child_of_node(np, child)
+			if (!strcmp(child->type, "cache"))
+				return child;
+
+	return NULL;
+}
+
+/**
+ * of_graph_parse_endpoint() - parse common endpoint node properties
+ * @node: pointer to endpoint device_node
+ * @endpoint: pointer to the OF endpoint data structure
+ *
+ * The caller should hold a reference to @node.
+ */
+int of_graph_parse_endpoint(const struct device_node *node,
+			    struct of_endpoint *endpoint)
+{
+	struct device_node *port_node = of_get_parent(node);
+
+	WARN_ONCE(!port_node, "%s(): endpoint %s has no parent node\n",
+		  __func__, node->full_name);
+
+	memset(endpoint, 0, sizeof(*endpoint));
+
+	endpoint->local_node = node;
+	/*
+	 * It doesn't matter whether the two calls below succeed.
+	 * If they don't then the default value 0 is used.
+	 */
+	of_property_read_u32(port_node, "reg", &endpoint->port);
+	of_property_read_u32(node, "reg", &endpoint->id);
+
+	of_node_put(port_node);
+
+	return 0;
+}
+EXPORT_SYMBOL(of_graph_parse_endpoint);
+
+/**
+ * of_graph_get_next_endpoint() - get next endpoint node
+ * @parent: pointer to the parent device node
+ * @prev: previous endpoint node, or NULL to get first
+ *
+ * Return: An 'endpoint' node pointer with refcount incremented. Refcount
+ * of the passed @prev node is not decremented, the caller have to use
+ * of_node_put() on it when done.
+ */
+struct device_node *of_graph_get_next_endpoint(const struct device_node *parent,
+					struct device_node *prev)
+{
+	struct device_node *endpoint;
+	struct device_node *port = NULL;
+
+	if (!parent)
+		return NULL;
+
+	if (!prev) {
+		struct device_node *node;
+		/*
+		 * It's the first call, we have to find a port subnode
+		 * within this node or within an optional 'ports' node.
+		 */
+		node = of_get_child_by_name(parent, "ports");
+		if (node)
+			parent = node;
+
+		port = of_get_child_by_name(parent, "port");
+
+		if (port) {
+			/* Found a port, get an endpoint. */
+			endpoint = of_get_next_child(port, NULL);
+			of_node_put(port);
+		} else {
+			endpoint = NULL;
+		}
+
+		if (!endpoint)
+			pr_err("%s(): no endpoint nodes specified for %s\n",
+			       __func__, parent->full_name);
+		of_node_put(node);
+
+		return endpoint;
+	}
+
+	port = of_get_parent(prev);
+	if (WARN_ONCE(!port, "%s(): endpoint %s has no parent node\n",
+		      __func__, prev->full_name))
+		return NULL;
+
+	/* Avoid dropping prev node refcount to 0. */
+	of_node_get(prev);
+	endpoint = of_get_next_child(port, prev);
+	if (endpoint) {
+		of_node_put(port);
+		return endpoint;
+	}
+
+	/* No more endpoints under this port, try the next one. */
+	do {
+		port = of_get_next_child(parent, port);
+		if (!port)
+			return NULL;
+	} while (of_node_cmp(port->name, "port"));
+
+	/* Pick up the first endpoint in this port. */
+	endpoint = of_get_next_child(port, NULL);
+	of_node_put(port);
+
+	return endpoint;
+}
+EXPORT_SYMBOL(of_graph_get_next_endpoint);
+
+/**
+ * of_graph_get_remote_port_parent() - get remote port's parent node
+ * @node: pointer to a local endpoint device_node
+ *
+ * Return: Remote device node associated with remote endpoint node linked
+ *	   to @node. Use of_node_put() on it when done.
+ */
+struct device_node *of_graph_get_remote_port_parent(
+			       const struct device_node *node)
+{
+	struct device_node *np;
+	unsigned int depth;
+
+	/* Get remote endpoint node. */
+	np = of_parse_phandle(node, "remote-endpoint", 0);
+
+	/* Walk 3 levels up only if there is 'ports' node. */
+	for (depth = 3; depth && np; depth--) {
+		np = of_get_next_parent(np);
+		if (depth == 2 && of_node_cmp(np->name, "ports"))
+			break;
+	}
+	return np;
+}
+EXPORT_SYMBOL(of_graph_get_remote_port_parent);
+
+/**
+ * of_graph_get_remote_port() - get remote port node
+ * @node: pointer to a local endpoint device_node
+ *
+ * Return: Remote port node associated with remote endpoint node linked
+ *	   to @node. Use of_node_put() on it when done.
+ */
+struct device_node *of_graph_get_remote_port(const struct device_node *node)
+{
+	struct device_node *np;
+
+	/* Get remote endpoint node. */
+	np = of_parse_phandle(node, "remote-endpoint", 0);
+	if (!np)
+		return NULL;
+	return of_get_next_parent(np);
+}
+EXPORT_SYMBOL(of_graph_get_remote_port);

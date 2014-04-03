@@ -5,11 +5,11 @@ Rockchip's smp-capable SoCs use the first part of the sram for the bringup
 of the cores. Once the core gets powered up it executes the code that is
 residing at the very beginning of the sram.
 
-Therefore a reserved section has to be added to the mmio-sram declaration.
+Therefore a reserved section sub-node has to be added to the mmio-sram
+declaration.
 
-Required node properties:
-- compatible : should contain both "rockchip,rk3066-sram", "mmio-sram"
-  so that the smp code can select the correct sram node.
+Required sub-node properties:
+- compatible : should be "rockchip,rk3066-smp-sram"
 
 The rest of the properties should follow the generic mmio-sram discription
 found in ../../misc/sram.txt
@@ -17,7 +17,14 @@ found in ../../misc/sram.txt
 Example:
 
 	sram: sram@10080000 {
-		compatible = "rockchip,rk3066-sram", "mmio-sram";
+		compatible = "mmio-sram";
 		reg = <0x10080000 0x10000>;
-		mmio-sram-reserved = <0x0 0x50>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		smp-sram@10080000 {
+			compatible = "rockchip,rk3066-smp-sram";
+			reg = <0x10080000 0x50>;
+		};
 	};

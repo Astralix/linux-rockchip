@@ -23,7 +23,6 @@
 #include <linux/genhd.h>
 #include <linux/kallsyms.h>
 #include <linux/mutex.h>
-#include <linux/async.h>
 #include <linux/pm_runtime.h>
 #include <linux/netdevice.h>
 #include <linux/sysfs.h>
@@ -455,64 +454,6 @@ static ssize_t online_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_RW(online);
 
-static int device_add_attributes(struct device *dev,
-				 struct device_attribute *attrs)
-{
-	int error = 0;
-	int i;
-
-	if (attrs) {
-		for (i = 0; attrs[i].attr.name; i++) {
-			error = device_create_file(dev, &attrs[i]);
-			if (error)
-				break;
-		}
-		if (error)
-			while (--i >= 0)
-				device_remove_file(dev, &attrs[i]);
-	}
-	return error;
-}
-
-static void device_remove_attributes(struct device *dev,
-				     struct device_attribute *attrs)
-{
-	int i;
-
-	if (attrs)
-		for (i = 0; attrs[i].attr.name; i++)
-			device_remove_file(dev, &attrs[i]);
-}
-
-static int device_add_bin_attributes(struct device *dev,
-				     struct bin_attribute *attrs)
-{
-	int error = 0;
-	int i;
-
-	if (attrs) {
-		for (i = 0; attrs[i].attr.name; i++) {
-			error = device_create_bin_file(dev, &attrs[i]);
-			if (error)
-				break;
-		}
-		if (error)
-			while (--i >= 0)
-				device_remove_bin_file(dev, &attrs[i]);
-	}
-	return error;
-}
-
-static void device_remove_bin_attributes(struct device *dev,
-					 struct bin_attribute *attrs)
-{
-	int i;
-
-	if (attrs)
-		for (i = 0; attrs[i].attr.name; i++)
-			device_remove_bin_file(dev, &attrs[i]);
-}
-
 int device_add_groups(struct device *dev, const struct attribute_group **groups)
 {
 	return sysfs_create_groups(&dev->kobj, groups);
@@ -534,18 +475,12 @@ static int device_add_attrs(struct device *dev)
 		error = device_add_groups(dev, class->dev_groups);
 		if (error)
 			return error;
-		error = device_add_attributes(dev, class->dev_attrs);
-		if (error)
-			goto err_remove_class_groups;
-		error = device_add_bin_attributes(dev, class->dev_bin_attrs);
-		if (error)
-			goto err_remove_class_attrs;
 	}
 
 	if (type) {
 		error = device_add_groups(dev, type->groups);
 		if (error)
-			goto err_remove_class_bin_attrs;
+			goto err_remove_class_groups;
 	}
 
 	error = device_add_groups(dev, dev->groups);
@@ -555,20 +490,16 @@ static int device_add_attrs(struct device *dev)
 	if (device_supports_offline(dev) && !dev->offline_disabled) {
 		error = device_create_file(dev, &dev_attr_online);
 		if (error)
-			goto err_remove_type_groups;
+			goto err_remove_dev_groups;
 	}
 
 	return 0;
 
+ err_remove_dev_groups:
+	device_remove_groups(dev, dev->groups);
  err_remove_type_groups:
 	if (type)
 		device_remove_groups(dev, type->groups);
- err_remove_class_bin_attrs:
-	if (class)
-		device_remove_bin_attributes(dev, class->dev_bin_attrs);
- err_remove_class_attrs:
-	if (class)
-		device_remove_attributes(dev, class->dev_attrs);
  err_remove_class_groups:
 	if (class)
 		device_remove_groups(dev, class->dev_groups);
@@ -587,11 +518,8 @@ static void device_remove_attrs(struct device *dev)
 	if (type)
 		device_remove_groups(dev, type->groups);
 
-	if (class) {
-		device_remove_attributes(dev, class->dev_attrs);
-		device_remove_bin_attributes(dev, class->dev_bin_attrs);
+	if (class)
 		device_remove_groups(dev, class->dev_groups);
-	}
 }
 
 static ssize_t dev_show(struct device *dev, struct device_attribute *attr,
@@ -640,6 +568,23 @@ void device_remove_file(struct device *dev,
 		sysfs_remove_file(&dev->kobj, &attr->attr);
 }
 EXPORT_SYMBOL_GPL(device_remove_file);
+
+/**
+ * device_remove_file_self - remove sysfs attribute file from its own method.
+ * @dev: device.
+ * @attr: device attribute descriptor.
+ *
+ * See kernfs_remove_self() for details.
+ */
+bool device_remove_file_self(struct device *dev,
+			     const struct device_attribute *attr)
+{
+	if (dev)
+		return sysfs_remove_file_self(&dev->kobj, &attr->attr);
+	else
+		return false;
+}
+EXPORT_SYMBOL_GPL(device_remove_file_self);
 
 /**
  * device_create_bin_file - create sysfs binary attribute file for device.
@@ -1676,6 +1621,7 @@ device_create_groups_vargs(struct class *class, struct device *parent,
 		goto error;
 	}
 
+	device_initialize(dev);
 	dev->devt = devt;
 	dev->class = class;
 	dev->parent = parent;
@@ -1687,7 +1633,7 @@ device_create_groups_vargs(struct class *class, struct device *parent,
 	if (retval)
 		goto error;
 
-	retval = device_register(dev);
+	retval = device_add(dev);
 	if (retval)
 		goto error;
 
@@ -1881,6 +1827,7 @@ EXPORT_SYMBOL_GPL(device_destroy);
  */
 int device_rename(struct device *dev, const char *new_name)
 {
+	struct kobject *kobj = &dev->kobj;
 	char *old_device_name = NULL;
 	int error;
 
@@ -1888,8 +1835,7 @@ int device_rename(struct device *dev, const char *new_name)
 	if (!dev)
 		return -EINVAL;
 
-	pr_debug("device: '%s': %s: renaming to '%s'\n", dev_name(dev),
-		 __func__, new_name);
+	dev_dbg(dev, "renaming to %s\n", new_name);
 
 	old_device_name = kstrdup(dev_name(dev), GFP_KERNEL);
 	if (!old_device_name) {
@@ -1898,13 +1844,14 @@ int device_rename(struct device *dev, const char *new_name)
 	}
 
 	if (dev->class) {
-		error = sysfs_rename_link(&dev->class->p->subsys.kobj,
-			&dev->kobj, old_device_name, new_name);
+		error = sysfs_rename_link_ns(&dev->class->p->subsys.kobj,
+					     kobj, old_device_name,
+					     new_name, kobject_namespace(kobj));
 		if (error)
 			goto out;
 	}
 
-	error = kobject_rename(&dev->kobj, new_name);
+	error = kobject_rename(kobj, new_name);
 	if (error)
 		goto out;
 
@@ -2017,7 +1964,7 @@ EXPORT_SYMBOL_GPL(device_move);
  */
 void device_shutdown(void)
 {
-	struct device *dev;
+	struct device *dev, *parent;
 
 	spin_lock(&devices_kset->list_lock);
 	/*
@@ -2034,7 +1981,7 @@ void device_shutdown(void)
 		 * prevent it from being freed because parent's
 		 * lock is to be held
 		 */
-		get_device(dev->parent);
+		parent = get_device(dev->parent);
 		get_device(dev);
 		/*
 		 * Make sure the device is off the kset list, in the
@@ -2044,8 +1991,8 @@ void device_shutdown(void)
 		spin_unlock(&devices_kset->list_lock);
 
 		/* hold lock to avoid race with probe/release */
-		if (dev->parent)
-			device_lock(dev->parent);
+		if (parent)
+			device_lock(parent);
 		device_lock(dev);
 
 		/* Don't allow any more runtime suspends */
@@ -2063,16 +2010,15 @@ void device_shutdown(void)
 		}
 
 		device_unlock(dev);
-		if (dev->parent)
-			device_unlock(dev->parent);
+		if (parent)
+			device_unlock(parent);
 
 		put_device(dev);
-		put_device(dev->parent);
+		put_device(parent);
 
 		spin_lock(&devices_kset->list_lock);
 	}
 	spin_unlock(&devices_kset->list_lock);
-	async_synchronize_full();
 }
 
 /*
@@ -2127,7 +2073,6 @@ create_syslog_header(const struct device *dev, char *hdr, size_t hdrlen)
 
 	return pos;
 }
-EXPORT_SYMBOL(create_syslog_header);
 
 int dev_vprintk_emit(int level, const struct device *dev,
 		     const char *fmt, va_list args)

@@ -469,7 +469,7 @@ static void *thread_func(void *ctx)
 	char comm2[22];
 	int fd;
 
-	free(parms);
+	zfree(&parms);
 
 	sprintf(comm2, ":%s", this_task->comm);
 	prctl(PR_SET_NAME, comm2);
@@ -737,12 +737,12 @@ static int replay_fork_event(struct perf_sched *sched,
 
 	if (verbose) {
 		printf("fork event\n");
-		printf("... parent: %s/%d\n", parent->comm, parent->tid);
-		printf("...  child: %s/%d\n", child->comm, child->tid);
+		printf("... parent: %s/%d\n", thread__comm_str(parent), parent->tid);
+		printf("...  child: %s/%d\n", thread__comm_str(child), child->tid);
 	}
 
-	register_pid(sched, parent->tid, parent->comm);
-	register_pid(sched, child->tid, child->comm);
+	register_pid(sched, parent->tid, thread__comm_str(parent));
+	register_pid(sched, child->tid, thread__comm_str(child));
 	return 0;
 }
 
@@ -1077,7 +1077,7 @@ static int latency_migrate_task_event(struct perf_sched *sched,
 	if (!atoms) {
 		if (thread_atoms_insert(sched, migrant))
 			return -1;
-		register_pid(sched, migrant->tid, migrant->comm);
+		register_pid(sched, migrant->tid, thread__comm_str(migrant));
 		atoms = thread_atoms_search(&sched->atom_root, migrant, &sched->cmp_pid);
 		if (!atoms) {
 			pr_err("migration-event: Internal tree error");
@@ -1111,20 +1111,20 @@ static void output_lat_thread(struct perf_sched *sched, struct work_atoms *work_
 	/*
 	 * Ignore idle threads:
 	 */
-	if (!strcmp(work_list->thread->comm, "swapper"))
+	if (!strcmp(thread__comm_str(work_list->thread), "swapper"))
 		return;
 
 	sched->all_runtime += work_list->total_runtime;
 	sched->all_count   += work_list->nb_atoms;
 
-	ret = printf("  %s:%d ", work_list->thread->comm, work_list->thread->tid);
+	ret = printf("  %s:%d ", thread__comm_str(work_list->thread), work_list->thread->tid);
 
 	for (i = 0; i < 24 - ret; i++)
 		printf(" ");
 
 	avg = work_list->total_lat / work_list->nb_atoms;
 
-	printf("|%11.3f ms |%9" PRIu64 " | avg:%9.3f ms | max:%9.3f ms | max at: %9.6f s\n",
+	printf("|%11.3f ms |%9" PRIu64 " | avg:%9.3f ms | max:%9.3f ms | max at: %13.6f s\n",
 	      (double)work_list->total_runtime / 1e6,
 		 work_list->nb_atoms, (double)avg / 1e6,
 		 (double)work_list->max_lat / 1e6,
@@ -1334,7 +1334,7 @@ static int map_switch_event(struct perf_sched *sched, struct perf_evsel *evsel,
 	printf("  %12.6f secs ", (double)timestamp/1e9);
 	if (new_shortname) {
 		printf("%s => %s:%d\n",
-			sched_in->shortname, sched_in->comm, sched_in->tid);
+		       sched_in->shortname, thread__comm_str(sched_in), sched_in->tid);
 	} else {
 		printf("\n");
 	}
@@ -1427,8 +1427,8 @@ static int perf_sched__process_tracepoint_sample(struct perf_tool *tool __maybe_
 	evsel->hists.stats.total_period += sample->period;
 	hists__inc_nr_events(&evsel->hists, PERF_RECORD_SAMPLE);
 
-	if (evsel->handler.func != NULL) {
-		tracepoint_handler f = evsel->handler.func;
+	if (evsel->handler != NULL) {
+		tracepoint_handler f = evsel->handler;
 		err = f(tool, evsel, sample, machine);
 	}
 
@@ -1446,8 +1446,12 @@ static int perf_sched__read_events(struct perf_sched *sched,
 		{ "sched:sched_migrate_task", process_sched_migrate_task_event, },
 	};
 	struct perf_session *session;
+	struct perf_data_file file = {
+		.path = input_name,
+		.mode = PERF_DATA_MODE_READ,
+	};
 
-	session = perf_session__new(input_name, O_RDONLY, 0, false, &sched->tool);
+	session = perf_session__new(&file, false, &sched->tool);
 	if (session == NULL) {
 		pr_debug("No Memory for session\n");
 		return -1;
@@ -1523,9 +1527,9 @@ static int perf_sched__lat(struct perf_sched *sched)
 
 	perf_sched__sort_lat(sched);
 
-	printf("\n ---------------------------------------------------------------------------------------------------------------\n");
-	printf("  Task                  |   Runtime ms  | Switches | Average delay ms | Maximum delay ms | Maximum delay at     |\n");
-	printf(" ---------------------------------------------------------------------------------------------------------------\n");
+	printf("\n -----------------------------------------------------------------------------------------------------------------\n");
+	printf("  Task                  |   Runtime ms  | Switches | Average delay ms | Maximum delay ms | Maximum delay at       |\n");
+	printf(" -----------------------------------------------------------------------------------------------------------------\n");
 
 	next = rb_first(&sched->sorted_atom_root);
 
@@ -1537,7 +1541,7 @@ static int perf_sched__lat(struct perf_sched *sched)
 		next = rb_next(next);
 	}
 
-	printf(" -----------------------------------------------------------------------------------------\n");
+	printf(" -----------------------------------------------------------------------------------------------------------------\n");
 	printf("  TOTAL:                |%11.3f ms |%9" PRIu64 " |\n",
 		(double)sched->all_runtime / 1e6, sched->all_count);
 
@@ -1651,29 +1655,27 @@ static int __cmd_record(int argc, const char **argv)
 	return cmd_record(i, rec_argv, NULL);
 }
 
-static const char default_sort_order[] = "avg, max, switch, runtime";
-static struct perf_sched sched = {
-	.tool = {
-		.sample		 = perf_sched__process_tracepoint_sample,
-		.comm		 = perf_event__process_comm,
-		.lost		 = perf_event__process_lost,
-		.fork		 = perf_sched__process_fork_event,
-		.ordered_samples = true,
-	},
-	.cmp_pid	      = LIST_HEAD_INIT(sched.cmp_pid),
-	.sort_list	      = LIST_HEAD_INIT(sched.sort_list),
-	.start_work_mutex     = PTHREAD_MUTEX_INITIALIZER,
-	.work_done_wait_mutex = PTHREAD_MUTEX_INITIALIZER,
-	.curr_pid	      = { [0 ... MAX_CPUS - 1] = -1 },
-	.sort_order	      = default_sort_order,
-	.replay_repeat	      = 10,
-	.profile_cpu	      = -1,
-	.next_shortname1      = 'A',
-	.next_shortname2      = '0',
-};
-
 int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 {
+	const char default_sort_order[] = "avg, max, switch, runtime";
+	struct perf_sched sched = {
+		.tool = {
+			.sample		 = perf_sched__process_tracepoint_sample,
+			.comm		 = perf_event__process_comm,
+			.lost		 = perf_event__process_lost,
+			.fork		 = perf_sched__process_fork_event,
+			.ordered_samples = true,
+		},
+		.cmp_pid	      = LIST_HEAD_INIT(sched.cmp_pid),
+		.sort_list	      = LIST_HEAD_INIT(sched.sort_list),
+		.start_work_mutex     = PTHREAD_MUTEX_INITIALIZER,
+		.work_done_wait_mutex = PTHREAD_MUTEX_INITIALIZER,
+		.sort_order	      = default_sort_order,
+		.replay_repeat	      = 10,
+		.profile_cpu	      = -1,
+		.next_shortname1      = 'A',
+		.next_shortname2      = '0',
+	};
 	const struct option latency_options[] = {
 	OPT_STRING('s', "sort", &sched.sort_order, "key[,key2...]",
 		   "sort by key(s): runtime, switch, avg, max"),
@@ -1729,6 +1731,10 @@ int cmd_sched(int argc, const char **argv, const char *prefix __maybe_unused)
 		.switch_event	    = replay_switch_event,
 		.fork_event	    = replay_fork_event,
 	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(sched.curr_pid); i++)
+		sched.curr_pid[i] = -1;
 
 	argc = parse_options(argc, argv, sched_options, sched_usage,
 			     PARSE_OPT_STOP_AT_NON_OPTION);

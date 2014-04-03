@@ -368,15 +368,6 @@ struct sirfsoc_uart_register sirfsoc_uart = {
 #define SIRFSOC_UART_NR				6
 #define SIRFSOC_PORT_TYPE			0xa5
 
-/* Baud Rate Calculation */
-#define SIRF_MIN_SAMPLE_DIV			0xf
-#define SIRF_MAX_SAMPLE_DIV			0x3f
-#define SIRF_IOCLK_DIV_MAX			0xffff
-#define SIRF_SAMPLE_DIV_SHIFT			16
-#define SIRF_IOCLK_DIV_MASK			0xffff
-#define SIRF_SAMPLE_DIV_MASK			0x3f0000
-#define SIRF_BAUD_RATE_SUPPORT_NR		18
-
 /* Uart Common Use Macro*/
 #define SIRFSOC_RX_DMA_BUF_SIZE	256
 #define BYTES_TO_ALIGN(dma_addr)	((unsigned long)(dma_addr) & 0x3)
@@ -401,9 +392,6 @@ struct sirfsoc_uart_register sirfsoc_uart = {
 /* Indicate how many buffers used */
 #define SIRFSOC_RX_LOOP_BUF_CNT		2
 
-/* Indicate if DMA channel valid */
-#define IS_DMA_CHAN_VALID(x)	((x) != -1)
-#define UNVALID_DMA_CHAN	-1
 /* For Fast Baud Rate Calculation */
 struct sirfsoc_baudrate_to_regv {
 	unsigned int baud_rate;
@@ -432,8 +420,6 @@ struct sirfsoc_uart_port {
 	/* for SiRFmarco, there are SET/CLR for UART_INT_EN */
 	bool				is_marco;
 	struct sirfsoc_uart_register	*uart_reg;
-	int				rx_dma_no;
-	int				tx_dma_no;
 	struct dma_chan			*rx_dma_chan;
 	struct dma_chan			*tx_dma_chan;
 	dma_addr_t			tx_dma_addr;
@@ -452,9 +438,6 @@ struct sirfsoc_uart_port {
 	int				rx_completed;
 	int				rx_issued;
 };
-
-/* Hardware Flow Control */
-#define SIRFUART_AFC_CTRL_RX_THD	0x70
 
 /* Register Access Control */
 #define portaddr(port, reg)		((port)->membase + (reg))

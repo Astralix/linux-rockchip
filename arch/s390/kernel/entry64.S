@@ -48,6 +48,7 @@ _TIF_WORK_INT = (_TIF_SIGPENDING | _TIF_NOTIFY_RESUME | _TIF_NEED_RESCHED | \
 		 _TIF_MCCK_PENDING)
 _TIF_TRACE    = (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | _TIF_SECCOMP | \
 		 _TIF_SYSCALL_TRACEPOINT)
+_TIF_TRANSFER = (_TIF_MCCK_PENDING | _TIF_TLB_WAIT)
 
 #define BASED(name) name-system_call(%r13)
 
@@ -74,7 +75,7 @@ _TIF_TRACE    = (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | _TIF_SECCOMP | \
 	.endm
 
 	.macro LPP newpp
-#if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
+#if IS_ENABLED(CONFIG_KVM)
 	tm	__LC_MACHINE_FLAGS+6,0x20	# MACHINE_FLAG_LPP
 	jz	.+8
 	.insn	s,0xb2800000,\newpp
@@ -82,7 +83,7 @@ _TIF_TRACE    = (_TIF_SYSCALL_TRACE | _TIF_SYSCALL_AUDIT | _TIF_SECCOMP | \
 	.endm
 
 	.macro	HANDLE_SIE_INTERCEPT scratch,reason
-#if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
+#if IS_ENABLED(CONFIG_KVM)
 	tmhh	%r8,0x0001		# interrupting from user ?
 	jnz	.+62
 	lgr	\scratch,%r9
@@ -189,10 +190,12 @@ ENTRY(__switch_to)
 	lctl	%c4,%c4,__TASK_pid(%r3)		# load pid to control reg. 4
 	mvc	__LC_CURRENT_PID+4(4,%r0),__TASK_pid(%r3) # store pid of next
 	lg	%r15,__THREAD_ksp(%r3)		# load kernel stack of next
-	tm	__TI_flags+7(%r4),_TIF_MCCK_PENDING # machine check pending?
+	llill	%r6,_TIF_TRANSFER		# transfer TIF bits
+	ng	%r6,__TI_flags(%r4)		# isolate TIF bits
 	jz	0f
-	ni	__TI_flags+7(%r4),255-_TIF_MCCK_PENDING	# clear flag in prev
-	oi	__TI_flags+7(%r5),_TIF_MCCK_PENDING	# set it in next
+	og	%r6,__TI_flags(%r5)		# set TIF bits of next
+	stg	%r6,__TI_flags(%r5)
+	ni	__TI_flags+7(%r4),255-_TIF_TRANSFER # clear TIF bits of prev
 0:	lmg	%r6,%r15,__SF_GPRS(%r15)	# load gprs of next task
 	br	%r14
 
@@ -297,6 +300,7 @@ sysc_sigpending:
 	tm	__TI_flags+7(%r12),_TIF_SYSCALL
 	jno	sysc_return
 	lmg	%r2,%r7,__PT_R2(%r11)	# load svc arguments
+	lg	%r10,__TI_sysc_table(%r12)	# address of system call table
 	lghi	%r8,0			# svc 0 returns -ENOSYS
 	llgh	%r1,__PT_INT_CODE+2(%r11)	# load new svc number
 	cghi	%r1,NR_syscalls
@@ -945,7 +949,7 @@ cleanup_idle_insn:
 	.quad	__critical_end - __critical_start
 
 
-#if defined(CONFIG_KVM) || defined(CONFIG_KVM_MODULE)
+#if IS_ENABLED(CONFIG_KVM)
 /*
  * sie64a calling convention:
  * %r2 pointer to sie control block
@@ -974,7 +978,7 @@ sie_done:
 	lctlg	%c1,%c1,__LC_USER_ASCE		# load primary asce
 # some program checks are suppressing. C code (e.g. do_protection_exception)
 # will rewind the PSW by the ILC, which is 4 bytes in case of SIE. Other
-# instructions beween sie64a and sie_done should not cause program
+# instructions between sie64a and sie_done should not cause program
 # interrupts. So lets use a nop (47 00 00 00) as a landing pad.
 # See also HANDLE_SIE_INTERCEPT
 rewind_pad:

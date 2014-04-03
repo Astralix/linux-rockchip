@@ -49,7 +49,7 @@
 			#clock-cells = <0>;
 		};
 
-		clk_gates0: gate-clk@200000d0 {
+/*		clk_gates0: gate-clk@200000d0 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000d0 0x4>;
 			clocks = <&dummy150m>, <&dummy>,
@@ -72,7 +72,7 @@
 				"gate_spdif_frac", "gate_testclk";
 
 			#clock-cells = <1>;
-		};
+		};*/
 
 		clk_gates1: gate-clk@200000d4 {
 			compatible = "rockchip,rk2928-gate-clk";
@@ -149,7 +149,7 @@
 			#clock-cells = <1>;
 		};
 
-		clk_gates4: gate-clk@200000e0 {
+/*		clk_gates4: gate-clk@200000e0 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000e0 0x4>;
 			clocks = <&clk_gates2 2>, <&clk_gates2 3>,
@@ -172,18 +172,18 @@
 				"gate_hclk_imem1", "gate_hclk_imem0";
 
 			#clock-cells = <1>;
-		};
+		};*/
 
 		clk_gates5: gate-clk@200000e4 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000e4 0x4>;
-			clocks = <&clk_gates0 3>, <&clk_gates2 1>,
-				 <&clk_gates0 5>, <&clk_gates0 5>,
-				 <&clk_gates0 5>, <&clk_gates0 5>,
-				 <&clk_gates0 4>, <&clk_gates0 5>,
+			clocks = <&dummy>, <&clk_gates2 1>,
+				 <&dummy>, <&dummy>,
+				 <&dummy>, <&dummy>,
+				 <&dummy>, <&dummy>,
 				 <&clk_gates2 1>, <&clk_gates2 2>,
 				 <&clk_gates2 2>, <&clk_gates2 2>,
-				 <&clk_gates2 2>, <&clk_gates4 5>;
+				 <&clk_gates2 2>, <&dummy>;
 
 			clock-output-names =
 				"gate_aclk_dmac1", "gate_aclk_dmac2",
@@ -197,7 +197,7 @@
 			#clock-cells = <1>;
 		};
 
-		clk_gates6: gate-clk@200000e8 {
+/*		clk_gates6: gate-clk@200000e8 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000e8 0x4>;
 			clocks = <&clk_gates3 0>, <&clk_gates0 4>,
@@ -218,9 +218,9 @@
 				"gate_hclk_vio_bus", "gate_aclk_vio0";
 
 			#clock-cells = <1>;
-		};
+		};*/
 
-		clk_gates7: gate-clk@200000ec {
+/*		clk_gates7: gate-clk@200000ec {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000ec 0x4>;
 			clocks = <&clk_gates2 2>, <&clk_gates0 4>,
@@ -243,17 +243,17 @@
 				"gate_pclk_saradc", "gate_pclk_wdt";
 
 			#clock-cells = <1>;
-		};
+		};*/
 
 		clk_gates8: gate-clk@200000f0 {
 			compatible = "rockchip,rk2928-gate-clk";
 			reg = <0x200000f0 0x4>;
-			clocks = <&clk_gates0 5>, <&clk_gates0 5>,
+			clocks = <&dummy>, <&dummy>,
 				 <&clk_gates2 3>, <&clk_gates2 3>,
-				 <&clk_gates0 5>, <&clk_gates0 5>,
+				 <&dummy>, <&dummy>,
 				 <&clk_gates2 3>, <&clk_gates2 3>,
-				 <&clk_gates2 3>, <&clk_gates0 5>,
-				 <&clk_gates0 5>, <&clk_gates0 5>,
+				 <&clk_gates2 3>, <&dummy>,
+				 <&dummy>, <&dummy>,
 				 <&clk_gates2 3>, <&dummy>;
 
 			clock-output-names =

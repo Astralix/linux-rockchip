@@ -56,8 +56,6 @@
 #include <linux/types.h>		/* For standard types (like size_t) */
 #include <linux/errno.h>		/* For the -ENODEV/... values */
 #include <linux/kernel.h>		/* For printk/panic/... */
-#include <linux/miscdevice.h>		/* For MODULE_ALIAS_MISCDEV
-							(WATCHDOG_MINOR) */
 #include <linux/watchdog.h>		/* For the watchdog specific items */
 #include <linux/init.h>			/* For __init/__exit/... */
 #include <linux/fs.h>			/* For file operations */
@@ -349,15 +347,15 @@ static const struct watchdog_info ident = {
 static const struct watchdog_ops iTCO_wdt_ops = {
 	.owner =		THIS_MODULE,
 	.start =		iTCO_wdt_start,
-	.stop = 		iTCO_wdt_stop,
-	.ping = 		iTCO_wdt_ping,
+	.stop =			iTCO_wdt_stop,
+	.ping =			iTCO_wdt_ping,
 	.set_timeout =		iTCO_wdt_set_timeout,
 	.get_timeleft =		iTCO_wdt_get_timeleft,
 };
 
 static struct watchdog_device iTCO_wdt_watchdog_dev = {
 	.info =		&ident,
-	.ops = 		&iTCO_wdt_ops,
+	.ops =		&iTCO_wdt_ops,
 };
 
 /*
@@ -394,7 +392,7 @@ static int iTCO_wdt_probe(struct platform_device *dev)
 {
 	int ret = -ENODEV;
 	unsigned long val32;
-	struct lpc_ich_info *ich_info = dev->dev.platform_data;
+	struct lpc_ich_info *ich_info = dev_get_platdata(&dev->dev);
 
 	if (!ich_info)
 		goto out;
@@ -487,7 +485,7 @@ static int iTCO_wdt_probe(struct platform_device *dev)
 	iTCO_wdt_watchdog_dev.bootstatus = 0;
 	iTCO_wdt_watchdog_dev.timeout = WATCHDOG_TIMEOUT;
 	watchdog_set_nowayout(&iTCO_wdt_watchdog_dev, nowayout);
-	iTCO_wdt_watchdog_dev.parent = dev->dev.parent;
+	iTCO_wdt_watchdog_dev.parent = &dev->dev;
 
 	/* Make sure the watchdog is not running */
 	iTCO_wdt_stop(&iTCO_wdt_watchdog_dev);
@@ -582,5 +580,4 @@ MODULE_AUTHOR("Wim Van Sebroeck <wim@iguana.be>");
 MODULE_DESCRIPTION("Intel TCO WatchDog Timer Driver");
 MODULE_VERSION(DRV_VERSION);
 MODULE_LICENSE("GPL");
-MODULE_ALIAS_MISCDEV(WATCHDOG_MINOR);
 MODULE_ALIAS("platform:" DRV_NAME);

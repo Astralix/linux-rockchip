@@ -479,6 +479,7 @@ static inline void clocksource_dequeue_watchdog(struct clocksource *cs) { }
 static inline void clocksource_resume_watchdog(void) { }
 static inline int __clocksource_watchdog_kthread(void) { return 0; }
 static bool clocksource_is_watchdog(struct clocksource *cs) { return false; }
+void clocksource_mark_unstable(struct clocksource *cs) { }
 
 #endif /* CONFIG_CLOCKSOURCE_WATCHDOG */
 
@@ -908,7 +909,7 @@ sysfs_show_current_clocksources(struct device *dev,
 	return count;
 }
 
-size_t sysfs_get_uname(const char *buf, char *dst, size_t cnt)
+ssize_t sysfs_get_uname(const char *buf, char *dst, size_t cnt)
 {
 	size_t ret = cnt;
 
@@ -939,7 +940,7 @@ static ssize_t sysfs_override_clocksource(struct device *dev,
 					  struct device_attribute *attr,
 					  const char *buf, size_t count)
 {
-	size_t ret;
+	ssize_t ret;
 
 	mutex_lock(&clocksource_mutex);
 
@@ -967,7 +968,7 @@ static ssize_t sysfs_unbind_clocksource(struct device *dev,
 {
 	struct clocksource *cs;
 	char name[CS_NAME_LEN];
-	size_t ret;
+	ssize_t ret;
 
 	ret = sysfs_get_uname(buf, name, count);
 	if (ret < 0)
