@@ -15,6 +15,7 @@
 
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/clock/rk3188-cru.h>
 #include "rk3xxx.dtsi"
 #include "rk3188-clocks.dtsi"
 
@@ -51,6 +52,37 @@
 		};
 	};
 
+	clocks {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/*
+		 * This is a dummy clock, to be used as placeholder on
+		 * other mux clocks when a specific parent clock is not
+		 * yet implemented. It should be dropped when the driver
+		 * is complete.
+		 */
+		dummy: dummy {
+			compatible = "fixed-clock";
+			clock-frequency = <0>;
+			#clock-cells = <0>;
+		};
+
+		xin24m: xin24m {
+			compatible = "fixed-clock";
+			clock-frequency = <24000000>;
+			#clock-cells = <0>;
+		};
+
+		dummy150m: dummy150m {
+			compatible = "fixed-clock";
+			clock-frequency = <150000000>;
+			#clock-cells = <0>;
+		};
+
+	};
+
 	soc {
 		global-timer@1013c200 {
 			interrupts = <GIC_PPI 11 0xf04>;
@@ -73,10 +105,12 @@
 			};
 		};
 
-		cru@20000000 {
+		cru: cru@20000000 {
 			compatible = "rockchip,rk3188-cru";
 			reg = <0x20000000 0x1000>,
 			      <0x200080ac 0x4>;
+
+			#clock-cells = <1>;
 
 			#rockchip,armclk-cells = <3>;
 			rockchip,armclk-divider-table = <2208000 2 4>,
@@ -153,7 +187,7 @@
 				reg = <0x2000a000 0x100>,
 				      <0x20004064 0x8>;
 				interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
-				clocks = <&clk_gates8 9>;
+				clocks = <&cru PCLK_GPIO0>;
 
 				gpio-controller;
 				#gpio-cells = <2>;
@@ -166,7 +200,7 @@
 				compatible = "rockchip,gpio-bank";
 				reg = <0x2003c000 0x100>;
 				interrupts = <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>;
-				clocks = <&clk_gates8 10>;
+				clocks = <&cru PCLK_GPIO1>;
 
 				gpio-controller;
 				#gpio-cells = <2>;
@@ -179,7 +213,7 @@
 				compatible = "rockchip,gpio-bank";
 				reg = <0x2003e000 0x100>;
 				interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
-				clocks = <&clk_gates8 11>;
+				clocks = <&cru PCLK_GPIO2>;
 
 				gpio-controller;
 				#gpio-cells = <2>;
@@ -192,7 +226,7 @@
 				compatible = "rockchip,gpio-bank";
 				reg = <0x20080000 0x100>;
 				interrupts = <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>;
-				clocks = <&clk_gates8 12>;
+				clocks = <&cru PCLK_GPIO3>;
 
 				gpio-controller;
 				#gpio-cells = <2>;
@@ -268,34 +302,34 @@
 
 			sd0 {
 				sd0_clk: sd0-clk {
-					rockchip,pins = <RK_GPIO3 2 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 2 RK_FUNC_1 &pcfg_pull_down>;
 				};
 
 				sd0_cmd: sd0-cmd {
-					rockchip,pins = <RK_GPIO3 3 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 3 RK_FUNC_1 &pcfg_pull_up>;
 				};
 
 				sd0_cd: sd0-cd {
-					rockchip,pins = <RK_GPIO3 8 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 8 RK_FUNC_1 &pcfg_pull_up>;
 				};
 
 				sd0_wp: sd0-wp {
-					rockchip,pins = <RK_GPIO3 9 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 9 RK_FUNC_1 &pcfg_pull_down>;
 				};
 
 				sd0_pwr: sd0-pwr {
-					rockchip,pins = <RK_GPIO3 1 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 1 RK_FUNC_1 &pcfg_pull_down>;
 				};
 
 				sd0_bus1: sd0-bus-width1 {
-					rockchip,pins = <RK_GPIO3 4 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 4 RK_FUNC_1 &pcfg_pull_up>;
 				};
 
 				sd0_bus4: sd0-bus-width4 {
-					rockchip,pins = <RK_GPIO3 4 RK_FUNC_1 &pcfg_pull_none>,
-							<RK_GPIO3 5 RK_FUNC_1 &pcfg_pull_none>,
-							<RK_GPIO3 6 RK_FUNC_1 &pcfg_pull_none>,
-							<RK_GPIO3 7 RK_FUNC_1 &pcfg_pull_none>;
+					rockchip,pins = <RK_GPIO3 4 RK_FUNC_1 &pcfg_pull_up>,
+							<RK_GPIO3 5 RK_FUNC_1 &pcfg_pull_up>,
+							<RK_GPIO3 6 RK_FUNC_1 &pcfg_pull_up>,
+							<RK_GPIO3 7 RK_FUNC_1 &pcfg_pull_up>;
 				};
 			};
 

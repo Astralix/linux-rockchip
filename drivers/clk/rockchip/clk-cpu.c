@@ -227,18 +227,15 @@ static const struct rk2928_reg_data rk3188_data = {
 	.div_core_mask = RK3188_DIV_CORE_MASK,
 };
 
-static const struct clk_ops rk3188_cpuclk_ops = {
-	.recalc_rate = rockchip_rk3188_cpuclk_recalc_rate,
-};
-
 /*
  * This clock notifier is called when the frequency of the parent clock
  * of cpuclk is to be changed. This notifier handles the setting up all
  * the divider clocks, remux to temporary parent and handling the safe
  * frequency levels when using temporary parent.
  */
-static int rk3188_cpuclk_notifier_cb(struct notifier_block *nb,
-				unsigned long event, void *data)
+static int rk2928_cpuclk_common_notifier_cb(struct notifier_block *nb,
+				unsigned long event, void *data,
+				const struct rk2928_reg_data *reg_data)
 {
 	struct clk_notifier_data *ndata = data;
 	struct rockchip_cpuclk *cpuclk = to_rockchip_cpuclk_nb(nb);
@@ -294,6 +291,16 @@ static int rk3188_cpuclk_notifier_cb(struct notifier_block *nb,
 	}
 
 	return NOTIFY_OK;
+}
+
+static const struct clk_ops rk3188_cpuclk_ops = {
+	.recalc_rate = rockchip_rk3188_cpuclk_recalc_rate,
+};
+
+static int rk3188_cpuclk_notifier_cb(struct notifier_block *nb,
+				unsigned long event, void *data)
+{
+	return rk2928_cpuclk_common_notifier_cb(nb, event, data, &rk3188_data);
 }
 
 /*

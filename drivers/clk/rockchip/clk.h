@@ -23,6 +23,7 @@
 #define HIWORD_UPDATE(val, mask, shift) \
 		(val) << (shift) | (mask) << ((shift) + 16)
 
+/* register positions shared by RK2928, RK3066 and RK3188 */
 #define RK2928_PLL_CON(x)		(x * 0x4)
 #define RK2928_MODE_CON		0x40
 #define RK2928_CLKSEL_CON(x)	(x * 0x4 + 0x44)

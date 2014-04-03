@@ -71,7 +71,8 @@
 			interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
 			reg-shift = <2>;
 			reg-io-width = <1>;
-			clocks = <&clk_gates1 8>;
+//			clocks = <&clk_gates1 8>;
+			clocks = <&cru SCLK_UART0>;
 			status = "disabled";
 		};
 
@@ -81,7 +82,8 @@
 			interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>;
 			reg-shift = <2>;
 			reg-io-width = <1>;
-			clocks = <&clk_gates1 10>;
+//			clocks = <&clk_gates1 10>;
+			clocks = <&cru SCLK_UART1>;
 			status = "disabled";
 		};
 
@@ -91,7 +93,8 @@
 			interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
 			reg-shift = <2>;
 			reg-io-width = <1>;
-			clocks = <&clk_gates1 12>;
+//			clocks = <&clk_gates1 12>;
+			clocks = <&cru SCLK_UART2>;
 			status = "disabled";
 		};
 
@@ -101,7 +104,8 @@
 			interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
 			reg-shift = <2>;
 			reg-io-width = <1>;
-			clocks = <&clk_gates1 14>;
+//			clocks = <&clk_gates1 14>;
+			clocks = <&cru SCLK_UART3>;
 			status = "disabled";
 		};
 
@@ -112,7 +116,9 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			clocks = <&clk_gates5 10>, <&clk_gates2 11>;
+//			clocks = <&clk_gates5 10>, <&clk_gates2 11>;
+			clocks = <&cru HCLK_MMC0>, <&cru SCLK_MMC0>;
+
 			clock-names = "biu", "ciu";
 
 			status = "disabled";
@@ -125,7 +131,8 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 
-			clocks = <&clk_gates5 11>, <&clk_gates2 13>;
+//			clocks = <&clk_gates5 11>, <&clk_gates2 13>;
+			clocks = <&cru HCLK_MMC1>, <&cru SCLK_MMC1>;
 			clock-names = "biu", "ciu";
 
 			status = "disabled";
