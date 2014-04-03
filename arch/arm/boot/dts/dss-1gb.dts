@@ -1,0 +1,236 @@
+/*
+ * dss1gb.dts - Device Tree file for digitalSTROM dSS-1GB
+ *
+ *  Copyright (C) 2014 Ulrich Prinz <ulrich.prinz@digitalstrom.com>
+ *
+ * Licensed under GPLv2 only.
+ */
+
+/dts-v1/;
+#include "at91sam9g20.dtsi"
+
+/ {
+/*
+	model = "dititalSTROM dSS11-1GB";
+	compatible = "digitalstrom,dss11-1gb", "atmel,at91sam9g20", "atmel,at91sam9";
+*/
+	model = "Atmel at91sam9g20ek";
+	compatible = "atmel,at91sam9g20ek", "atmel,at91sam9g20", "atmel,at91sam9";
+
+	chosen {
+		bootargs = "mem=64M console=ttyS0,115200 root=ubi0:dss11-1gb-rootfs rw rootfstype=ubifs";
+	};
+
+	memory {
+		reg = <0x20000000 0x4000000>;
+	};
+
+	clocks {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		main_clock: clock@0 {
+			compatible = "atmel,osc", "fixed-clock";
+			clock-frequency = <18432000>;
+		};
+	};
+
+	ahb {
+		apb {
+			pinctrl@fffff400 {
+				board {
+					pinctrl_pck0_as_mck: pck0_as_mck {
+						atmel,pins =
+							<AT91_PIOC 1 AT91_PERIPH_B AT91_PINCTRL_NONE>;	/* PC1 periph B */
+					};
+
+				};
+
+				mmc0_slot1 {
+					pinctrl_board_mmc0_slot1: mmc0_slot1-board {
+						atmel,pins =
+							<AT91_PIOC 9 AT91_PERIPH_GPIO AT91_PINCTRL_PULL_UP_DEGLITCH>;	/* PC9 gpio CD pin pull up and deglitch */
+					};
+				};
+
+				i2c0 {
+					pinctrl_i2c0: i2c0-0 {
+						atmel,pins =
+							<AT91_PIOA 23 AT91_PERIPH_A AT91_PINCTRL_MULTI_DRIVE	/* TWD (SDA), open drain */
+							 AT91_PIOA 24 AT91_PERIPH_A AT91_PINCTRL_MULTI_DRIVE>;	/* TWCK (SCL), open drain */
+					};
+				};
+			};
+
+			dbgu: serial@fffff200 {
+				status = "okay";
+			};
+
+			usart0: serial@fffb0000 {
+				pinctrl-0 =
+					<&pinctrl_usart0
+					 &pinctrl_usart0_rts
+					 &pinctrl_usart0_cts
+					 &pinctrl_usart0_dtr_dsr
+					 &pinctrl_usart0_dcd
+					 &pinctrl_usart0_ri>;
+				status = "okay";
+			};
+
+			usart1: serial@fffb4000 {
+				rs485-rx-during-tx;
+				linux,rs485-enabled-at-boot-time;
+				status = "okay";
+			};
+
+			macb0: ethernet@fffc4000 {
+				phy-mode = "mii";
+				status = "okay";
+			};
+
+			usb1: gadget@fffa4000 {
+				atmel,vbus-gpio = <&pioC 5 GPIO_ACTIVE_HIGH>;
+				status = "okay";
+			};
+
+/*	MMC0 is not populated on DSS11-1G
+			mmc0: mmc@fffa8000 {
+				pinctrl-0 = <
+					&pinctrl_board_mmc0_slot1
+					&pinctrl_mmc0_clk
+					&pinctrl_mmc0_slot1_cmd_dat0
+					&pinctrl_mmc0_slot1_dat1_3>;
+				status = "okay";
+				slot@1 {
+					reg = <1>;
+					bus-width = <4>;
+					cd-gpios = <&pioC 9 GPIO_ACTIVE_HIGH>;
+				};
+			};
+*/
+			ssc0: ssc@fffbc000 {
+				status = "okay";
+				pinctrl-0 = <&pinctrl_ssc0_tx>;
+			};
+
+			spi0: spi@fffc8000 {
+				status = "okay";
+				cs-gpios = <0>, <&pioC 11 0>, <0>, <0>;
+				m25p40@0 {
+					compatible = "m25p40";
+					spi-max-frequency = <50000000>;
+					reg = <0>;
+				};
+			};
+
+			watchdog@fffffd40 {
+				status = "disabled";
+			};
+		};
+
+		nand0: nand@40000000 {
+			nand-bus-width = <8>;
+			nand-ecc-mode = "soft_bch";
+			status = "okay";
+
+			kernel_rescue@0 {
+				label = "kernel-rescue";
+				reg = <0x0 0x400000>;
+			};
+
+			kernel_prod@400000 {
+				label = "kernel-prod";
+				reg = <0x400000 0x800000>;
+			};
+
+			rootfs_recue@0x800000 {
+				label = "rootfs-rescue";
+				reg = <0x800000 0x2800000>;
+			};
+
+			rootfs_prod@0x2800000 {
+				label = "rootfs-prod";
+				reg = <0x2800000 0x3f800000>;
+			};
+/*
+			oftree@80000 {
+				label = "oftree";
+				reg = <0xa0000 0x20000>;
+			};
+*/
+
+			config@0x3f800000 {
+				label = "kernel";
+				reg = <0x3f800000 0x40000000>;
+			};
+		};
+
+		rtc@fffffd30 {
+			compatible = "atmel,at91rm9200-rtc";
+			reg = <0xfffffd30 0x10>;
+			interrupts = <1 4 7>;
+		};
+
+		usb0: ohci@00500000 {
+			num-ports = <2>;
+			status = "okay";
+		};
+	
+	};
+
+	i2c@0 {
+		status = "okay";
+
+		rs5c372a@32 {
+			compatible = "rtc-rs5c372,rs5c372a";
+			reg = <0x32>;
+		};
+		
+		tmp75@48 {
+			compatible = "lm75";
+			reg = <0x48>;
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led_blue {
+			label = "blue";
+			gpios = <&pioB 3 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+		};
+
+		led_green {
+			label = "green";
+			gpios = <&pioB 0 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "none";
+		};
+
+		led_red {
+			label = "red";
+			gpios = <&pioB 1 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "none";
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		btn1 {
+			label = "Button 1";
+			gpios = <&pioB 2 GPIO_ACTIVE_LOW>;
+			linux,code = <0x101>;
+			gpio-key,wakeup;
+		};
+
+		btn2 {
+			label = "Button 2";
+			gpios = <&pioB 21 GPIO_ACTIVE_LOW>;
+			linux,code = <0x102>;
+			gpio-key,wakeup;
+		};
+	};
+};
