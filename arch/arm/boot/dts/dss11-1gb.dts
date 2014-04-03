@@ -54,6 +54,18 @@
 					};
 				};
 
+				gpio_keys {
+					pinctrl_btn1: btn1 {
+						atmel,pins =
+							<AT91_PIOB 2 AT91_PERIPH_GPIO AT91_PINCTRL_PULL_UP_DEGLITCH>;
+					};
+
+					pinctrl_btn2: btn2 {
+						atmel,pins =
+							<AT91_PIOB 21 AT91_PERIPH_GPIO AT91_PINCTRL_PULL_UP_DEGLITCH>;
+					};
+				};
+
 				i2c0 {
 					pinctrl_i2c0: i2c0-0 {
 						atmel,pins =
@@ -79,6 +91,9 @@
 			};
 
 			usart1: serial@fffb4000 {
+				pinctrl-0 =
+					<&pinctrl_usart1
+					 &pinctrl_usart1_rts>;
 				rs485-rx-during-tx;
 				linux,rs485-enabled-at-boot-time;
 				status = "okay";
@@ -119,7 +134,7 @@
 				cs-gpios = <0>, <&pioC 11 0>, <0>, <0>;
 				m25p40@0 {
 					compatible = "m25p40";
-					spi-max-frequency = <50000000>;
+					spi-max-frequency = <1000000>;	/* Reduced speed */
 					reg = <0>;
 				};
 			};
@@ -220,14 +235,14 @@
 		#size-cells = <0>;
 
 		btn1 {
-			label = "Button 1";
+			label = "Button_1";
 			gpios = <&pioB 2 GPIO_ACTIVE_LOW>;
 			linux,code = <0x101>;
 			gpio-key,wakeup;
 		};
 
 		btn2 {
-			label = "Button 2";
+			label = "Button_2";
 			gpios = <&pioB 21 GPIO_ACTIVE_LOW>;
 			linux,code = <0x102>;
 			gpio-key,wakeup;

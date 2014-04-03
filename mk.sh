@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # create dtb
-make dss-1gb.dtb
+make dss11-1gb.dtb
 
 # Attach dtb at end of image
 cat arch/arm/boot/zImage arch/arm/boot/dts/dss-1gb.dtb > zImage.tmp
