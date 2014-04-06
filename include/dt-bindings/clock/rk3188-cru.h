@@ -9,10 +9,10 @@
 #define CLK_ARMCLK	1
 
 
-#define SCLK_UART0	CLK_GATE(1, 8)
-#define SCLK_UART1	CLK_GATE(1, 10)
-#define SCLK_UART2	CLK_GATE(1, 12)
-#define SCLK_UART3	CLK_GATE(1, 14)
+#define SCLK_UART0	2
+#define SCLK_UART1	3
+#define SCLK_UART2	4
+#define SCLK_UART3	5
 
 #define SCLK_MMC0	CLK_GATE(2, 11)
 #define SCLK_MMC1	CLK_GATE(2, 13)

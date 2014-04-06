@@ -1,6 +1,13 @@
 /*
- * Copyright (c) 2013 MundoReader S.L.
+ * Copyright (c) 2014 MundoReader S.L.
  * Author: Heiko Stuebner <heiko@sntech.de>
+ *
+ * based on
+ *
+ * samsung/clk.c
+ * Copyright (c) 2013 Samsung Electronics Co., Ltd.
+ * Copyright (c) 2013 Linaro Ltd.
+ * Author: Thomas Abraham <thomas.ab@samsung.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -142,6 +149,7 @@ void __init rockchip_clk_init_from_table(struct rockchip_clk_init_table *tbl,
 
 		if (tbl->parent_name) {
 			struct clk *parent = __clk_lookup(tbl->parent_name);
+			pr_info("%s: setting parent if %s to %s\n", __func__, tbl->name, tbl->parent_name);
 			if (clk_set_parent(clk, parent)) {
 				pr_err("%s: Failed to set parent %s of %s\n",
 				       __func__, tbl->parent_name, tbl->name);

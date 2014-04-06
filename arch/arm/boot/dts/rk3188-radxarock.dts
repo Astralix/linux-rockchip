@@ -46,7 +46,7 @@
 			regulator-name = "sdmmc-supply";
 			regulator-min-microvolt = <3000000>;
 			regulator-max-microvolt = <3000000>;
-			gpio = <&gpio3 1 0 /*GPIO_ACTIVE_LOW*/>;
+			gpio = <&gpio3 1 GPIO_ACTIVE_LOW>;
 			startup-delay-us = <100000>;
 		};
 
@@ -107,13 +107,126 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&hym8563_int>;
 			};
+
+			pmic: act8846@5a {
+				compatible = "active-semi,act8846";
+				reg = <0x5a>;
+				status = "okay";
+
+				regulators {
+					vcc_ddr_reg: DCDC_REG1 {
+						regulator-name = "VCC_DDR";
+						regulator-min-microvolt = <1200000>;
+						regulator-max-microvolt = <1200000>;
+						regulator-always-on;
+					};
+
+					vdd_log_reg: DCDC_REG2 {
+						regulator-name = "VDD_LOG";
+						regulator-min-microvolt = <1000000>;
+						regulator-max-microvolt = <1000000>;
+						regulator-always-on;
+					};
+
+					vdd_arm_reg: DCDC_REG3 {
+						regulator-name = "VDD_ARM";
+						regulator-min-microvolt = <875000>;
+						regulator-max-microvolt = <1300000>;
+						regulator-always-on;
+					};
+
+					vcc_io_reg: DCDC_REG4 {
+						regulator-name = "VCC_IO";
+						regulator-min-microvolt = <3300000>;
+						regulator-max-microvolt = <3300000>;
+						regulator-always-on;
+					};
+
+					vdd_10_reg: LDO_REG5 {
+						regulator-name = "VDD_10";
+						regulator-min-microvolt = <1000000>;
+						regulator-max-microvolt = <1000000>;
+						regulator-always-on;
+					};
+
+/*					vdd_hdmi_reg: LDO_REG6 {
+						regulator-name = "VDD_HDMI";
+						regulator-min-microvolt = <2500000>;
+						regulator-max-microvolt = <2500000>;
+						regulator-always-on;
+					};*/
+
+					vcc_18_reg: LDO_REG7 {
+						regulator-name = "VCC_18";
+						regulator-min-microvolt = <1800000>;
+						regulator-max-microvolt = <1800000>;
+						regulator-always-on;
+					};
+
+					vcca_33_reg: LDO_REG8 {
+						regulator-name = "VCCA_33";
+						regulator-min-microvolt = <3300000>;
+						regulator-max-microvolt = <3300000>;
+						regulator-always-on;
+					};
+
+					vcc_rmii_reg: LDO_REG9 {
+						regulator-name = "VCC_RMII";
+						regulator-min-microvolt = <3300000>;
+						regulator-max-microvolt = <3300000>;
+						regulator-always-on;
+					};
+
+					vccio_wl_reg: LDO_REG10 {
+						regulator-name = "VCCIO_WL";
+						regulator-min-microvolt = <3300000>;
+						regulator-max-microvolt = <3300000>;
+						regulator-always-on;
+					};
+
+					vcc18_io_reg: LDO_REG11 {
+						regulator-name = "VCC18_IO";
+						regulator-min-microvolt = <1800000>;
+						regulator-max-microvolt = <1800000>;
+						regulator-always-on;
+					};
+
+					vcc_28_reg: LDO_REG12 {
+						regulator-name = "VCC_28";
+						regulator-min-microvolt = <2800000>;
+						regulator-max-microvolt = <2800000>;
+						regulator-always-on;
+					};
+
+					vcc_rtc_reg: LDO_REG13 {
+						regulator-name = "VCC_RTC";
+						regulator-min-microvolt = <1800000>;
+						regulator-max-microvolt = <1800000>;
+						regulator-always-on;
+					};
+				};
+			};
 		};
 
 		pinctrl@20008000 {
 			hym8563 {
 				hym8563_int: hym8563-int {
-					rockchip,pins = <RK_GPIO0 0 RK_FUNC_1 &pcfg_pull_up>;
+					rockchip,pins = <RK_GPIO0 0 RK_FUNC_GPIO &pcfg_pull_up>;
 				};
+			};
+		};
+
+		emac@10204000 {
+			status = "okay";
+
+			pinctrl-names = "default";
+			pinctrl-0 = <&emac_xfer>;
+
+			mac-address = [ 00 11 22 33 44 55 ];
+			phy = <&phy0>;
+
+			phy0: ethernet-phy@0 {
+				reg = <0>;
 			};
 		};
 

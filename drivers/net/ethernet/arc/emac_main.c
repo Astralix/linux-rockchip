@@ -643,13 +643,6 @@ static int arc_emac_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
-	/* Get CPU clock frequency from device tree */
-	if (of_property_read_u32(pdev->dev.of_node, "clock-frequency",
-				 &clock_frequency)) {
-		dev_err(&pdev->dev, "failed to retrieve <clock-frequency> from device tree\n");
-		return -EINVAL;
-	}
-
 	/* Get IRQ from device tree */
 	irq = irq_of_parse_and_map(pdev->dev.of_node, 0);
 	if (!irq) {
@@ -680,6 +673,27 @@ static int arc_emac_probe(struct platform_device *pdev)
 		goto out;
 	}
 	dev_dbg(&pdev->dev, "Registers base address is 0x%p\n", priv->regs);
+
+	priv->clk = of_clk_get(pdev->dev.of_node, 0);
+	if (IS_ERR(priv->clk)) {
+		/* Get CPU clock frequency from device tree */
+		if (of_property_read_u32(pdev->dev.of_node, "clock-frequency",
+					&clock_frequency)) {
+			dev_err(&pdev->dev, "failed to retrieve <clock-frequency> from device tree\n");
+			err = -EINVAL;
+			goto out;
+		}
+	} else {
+		err = clk_prepare_enable(priv->clk);
+		if (err) {
+			dev_err(&pdev->dev, "failed to enable clock\n");
+			err = -EINVAL; //goto err_clk_biu;
+			goto out;
+		}
+
+		clock_frequency = clk_get_rate(priv->clk);
+	}
+printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 
 	id = arc_reg_get(priv, R_ID);
 

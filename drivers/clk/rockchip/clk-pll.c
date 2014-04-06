@@ -56,9 +56,12 @@ static long rockchip_pll_round_rate(struct clk_hw *hw,
 	const struct rockchip_pll_rate_table *rate_table = pll->rate_table;
 	int i;
 
-	/* bypass the pll */
-	if (drate == *prate)
-		return drate;
+	/*
+	 * For anything smaller or equal to the parent rate, we can only
+	 * bypass the pll, so the parent_rate is the lowest we can get.
+	 */
+	if (drate <= *prate)
+		return *prate;
 
 	/* Assumming rate_table is in descending order */
 	for (i = 0; i < pll->rate_count; i++) {
