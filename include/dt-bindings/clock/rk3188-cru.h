@@ -20,8 +20,8 @@
 #define SCLK_MMC1	CLK_GATE(2, 13)
 #define SCLK_MMC2	CLK_GATE(2, 14)
 
-#define ACLK_DMAC1	CLK_GATE(5, 0)
-#define ACLK_DMAC2	CLK_GATE(5, 1)
+#define ACLK_DMAC0	CLK_GATE(5, 0)
+#define ACLK_DMAC1	CLK_GATE(5, 1)
 #define PCLK_GRF	CLK_GATE(5, 4)
 #define PCLK_PMU	CLK_GATE(5, 5)
 #define HCLK_MMC0	CLK_GATE(5, 10)
