@@ -68,7 +68,7 @@
 
 					pinctrl_usart1_cts: usart1_cts-0 {
 						atmel,pins =
-							<AT91_PIOB 29 AT91_PERIPH_A AT91_PINCTRL_PULL_UP>;	/* PB29 periph A */
+							<AT91_PIOB 29 AT91_PERIPH_A AT91_PINCTRL_NONE>;	/* PB29 periph A */
 					};
 				};
 
@@ -97,28 +97,20 @@
 				status = "okay";
 			};
 
-			usart0: serial@fffb0000 {
-				pinctrl-0 =
-					<&pinctrl_usart0
-					 &pinctrl_usart0_rts
-					 &pinctrl_usart0_cts
-					 &pinctrl_usart0_dtr_dsr
-					 &pinctrl_usart0_dcd
-					 &pinctrl_usart0_ri>;
-				status = "okay";
-			};
-
 			usart1: serial@fffb4000 {
 				pinctrl-0 =
 					<&pinctrl_usart1
 					 &pinctrl_usart1_rts>;
+				rs485-rts-delay = <0 0>;
 				rs485-rx-during-tx;
 				linux,rs485-enabled-at-boot-time;
+				atmel,use-dma-rx;
+				atmel,use-dma-tx;
 				status = "okay";
 			};
 
 			macb0: ethernet@fffc4000 {
-				phy-mode = "mii_alt";
+				phy-mode = "mii";
 				status = "okay";
 			};
 
