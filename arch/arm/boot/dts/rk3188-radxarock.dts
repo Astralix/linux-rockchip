@@ -209,9 +209,16 @@
 		};
 
 		pinctrl@20008000 {
+
 			hym8563 {
 				hym8563_int: hym8563-int {
 					rockchip,pins = <RK_GPIO0 0 RK_FUNC_GPIO &pcfg_pull_up>;
+				};
+			};
+			
+			lan8720a {
+				phy_int: phy-int {
+					rockchip,pins = <RK_GPIO3 26 RK_FUNC_GPIO &pcfg_pull_up>;
 				};
 			};
 		};
@@ -220,13 +227,16 @@
 			status = "okay";
 
 			pinctrl-names = "default";
-			pinctrl-0 = <&emac_xfer>;
-
-			mac-address = [ 00 11 22 33 44 55 ];
+			pinctrl-0 = <&emac_xfer &phy_int>;
+		
+			mac-address = [ 00 d0 93 2f c9 3a ];
+			phy-mode = "rmii";
 			phy = <&phy0>;
 
 			phy0: ethernet-phy@0 {
 				reg = <0>;
+				interrupt-parent = <&gpio3>;
+				interrupts = <26 IRQ_TYPE_LEVEL_LOW>;
 			};
 		};
 
