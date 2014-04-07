@@ -7,3 +7,4 @@ obj-y	+= clk-pll.o
 obj-y	+= clk-rk3188.o
 obj-y	+= clk.o
 obj-y	+= clk-cpu.o
+obj-y	+= softrst.o

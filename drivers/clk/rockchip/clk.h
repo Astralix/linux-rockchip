@@ -99,6 +99,9 @@ struct rockchip_pll_clock {
 		.rate_table	= _rtable,				\
 	}
 
+void rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk,
+				void __iomem *base, void __iomem *reg_lock,
+			       spinlock_t *lock);
 
 #define PNAME(x) static const char *x[] __initdata
 
@@ -226,9 +229,9 @@ void rockchip_clk_init(struct device_node *np, void __iomem *base,
 
 void rockchip_clk_add_lookup(struct clk *clk, unsigned int id);
 
-void rockchip_clk_register_pll(struct rockchip_pll_clock *pll_list,
+void rockchip_clk_register_plls(struct rockchip_pll_clock *pll_list,
 				unsigned int nr_pll, void __iomem *base,
-				void __iomem *lock);
+				void __iomem *reg_lock);
 void rockchip_clk_register_mux(struct rockchip_mux_clock *clk_list,
 				unsigned int nr_clk, void __iomem *base);
 void rockchip_clk_register_div(struct rockchip_div_clock *clk_list,
@@ -240,6 +243,12 @@ int rockchip_clk_register_cpuclk(unsigned int lookup_id,
 		const char *name, const char **parents,
 		unsigned int num_parents, void __iomem *base,
 		struct device_node *np);
+
+#define ROCKCHIP_SOFTRST_HIWORD_MASK	BIT(0)
+
+void __init rockchip_register_softrst(struct device_node *np,
+				      unsigned int num_regs,
+				      void __iomem *base, u8 flags);
 
 void rockchip_clk_init_from_table(struct rockchip_clk_init_table *tbl,
 				  unsigned int nr_tbl);

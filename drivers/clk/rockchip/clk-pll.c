@@ -31,6 +31,7 @@ struct rockchip_clk_pll {
 	enum rockchip_pll_type	type;
 	const struct rockchip_pll_rate_table *rate_table;
 	unsigned int		rate_count;
+	spinlock_t		*lock;
 };
 
 #define to_clk_pll(_hw) container_of(_hw, struct rockchip_clk_pll, hw)
@@ -131,9 +132,15 @@ static unsigned long rockchip_rk3066_pll_recalc_rate(struct clk_hw *hw,
 
 	pllcon = readl_relaxed(pll->reg_mode) >> pll->mode_shift;
 	pllcon &= RK3066_PLL_MODE_MASK;
-	if (pllcon != RK3066_PLL_MODE_NORM) {
-		pr_debug("%s: pll %s not in normal mode: %d\n", __func__,
-			__clk_get_name(hw->clk), pllcon);
+	switch (pllcon) {
+	case RK3066_PLL_MODE_NORM:
+		/* calculate the PLL rate below */
+		break;
+	case RK3066_PLL_MODE_SLOW:
+		return prate;
+	case RK3066_PLL_MODE_DEEP:
+		pr_warn("%s: deep slow mode for pll %s currently unknown, assuming parent rate\n",
+			__func__, __clk_get_name(hw->clk));
 		return prate;
 	}
 
@@ -241,8 +248,9 @@ static const struct clk_ops rockchip_rk3066_pll_clk_ops = {
 	.set_rate = rockchip_rk3066_pll_set_rate,
 };
 
-static void __init _rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk,
-					void __iomem *base, void __iomem *lock)
+void __init rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk,
+				void __iomem *base, void __iomem *reg_lock,
+				spinlock_t *lock)
 {
 	struct rockchip_clk_pll *pll;
 	struct clk *clk;
@@ -294,8 +302,9 @@ static void __init _rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk
 	pll->reg_base = base + pll_clk->con_offset;
 	pll->reg_mode = base + pll_clk->mode_offset;
 	pll->mode_shift = pll_clk->mode_shift;
-	pll->reg_lock = lock;
+	pll->reg_lock = reg_lock;
 	pll->lock_shift = pll_clk->lock_shift;
+	pll->lock = lock;
 
 	clk = clk_register(NULL, &pll->hw);
 	if (IS_ERR(clk)) {
@@ -306,14 +315,4 @@ static void __init _rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk
 	}
 
 	rockchip_clk_add_lookup(clk, pll_clk->id);
-}
-
-void __init rockchip_clk_register_pll(struct rockchip_pll_clock *pll_list,
-				unsigned int nr_pll, void __iomem *base,
-				void __iomem *lock)
-{
-	int cnt;
-
-	for (cnt = 0; cnt < nr_pll; cnt++)
-		_rockchip_clk_register_pll(&pll_list[cnt], base, lock);
 }

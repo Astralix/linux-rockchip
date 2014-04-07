@@ -42,8 +42,7 @@
 				312000 875000
 			>;
 			clock-latency = <61036>; /* two CLK32 periods */
-			clocks = <&cru CLK_ARMCLK>;
-			arm-supply = <&vdd_arm_reg>;
+			clocks = <&cru SCLK_ARMCLK>;
 		};
 		cpu@1 {
 			device_type = "cpu";
@@ -103,12 +102,51 @@
 	};
 
 	soc {
+		amba {
+			compatible = "arm,amba-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
+/*
+			dmac2: dma@20078000 {
+				compatible = "arm,pl330", "arm,primecell";
+				reg = <0x20078000 0x1000>;
+				interrupts = <GIC_SPI 2 IRQ_TYPE_LEVEL_HIGH>,
+					     <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>;
+				#dma-cells = <1>;
+				#dma-channels = <7>;
+				#dma-requests = <14>;
+				clocks = <&cru ACLK_DMAC2>;
+				clock-names = "apb_pclk";
+			};*/
+		};
+
 		global-timer@1013c200 {
 			interrupts = <GIC_PPI 11 0xf04>;
 		};
 
 		local-timer@1013c600 {
 			interrupts = <GIC_PPI 13 0xf04>;
+		};
+
+		dwc2@10180000 {
+			compatible = "snps,dwc2";
+			reg = <0x10180000 0x40000>;
+			interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&cru HCLK_OTG0>;
+			clock-names = "otg";
+//			phys = <&usbphy>;
+//			phy-names = "usb2-phy";
+		};
+
+		dwc2@101c0000 {
+			compatible = "snps,dwc2";
+			reg = <0x101c0000 0x40000>;
+			interrupts = <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&cru HCLK_OTG1>;
+			clock-names = "otg";
+//			phys = <&usbphy>;
+//			phy-names = "usb2-phy";
 		};
 
 		sram: sram@10080000 {
@@ -130,6 +168,7 @@
 			      <0x200080ac 0x4>;
 
 			#clock-cells = <1>;
+			#reset-cells = <1>;
 
 			#rockchip,armclk-cells = <3>;
 			rockchip,armclk-divider-table = <2208000 2 4>,
@@ -190,6 +229,17 @@
 							< 216000 0 1>,
 							< 126000 0 0>,
 							<  48000 0 0>;
+		};
+
+		/*
+		 * GRF_SOC_CON0
+		 * GRF_SOC_CON1
+		 * GRF_SOC_CON2
+		 * GRF_SOC_STATUS0
+		 */
+		grf: grf-soc-con@200080a0 {
+			compatible = "rockchip,rk3066-soc-con", "syscon";
+			reg = <0x200080a0 0x10>;
 		};
 
 		pinctrl@20008000 {
