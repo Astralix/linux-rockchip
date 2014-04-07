@@ -63,7 +63,7 @@
 
 					pinctrl_usart1_rts: usart1_rts-0 {
 						atmel,pins =
-							<AT91_PIOB 28 AT91_PERIPH_A AT91_PINCTRL_PULL_UP>;	/* PB28 periph A */
+							<AT91_PIOB 28 AT91_PERIPH_A AT91_PINCTRL_NONE>;	/* PB28 periph A */
 					};
 
 					pinctrl_usart1_cts: usart1_cts-0 {
@@ -111,6 +111,7 @@
 
 			macb0: ethernet@fffc4000 {
 				phy-mode = "mii";
+				pinctrl-0 = <&pinctrl_macb_rmii &pinctrl_macb_rmii_mii_alt>;
 				status = "okay";
 			};
 
