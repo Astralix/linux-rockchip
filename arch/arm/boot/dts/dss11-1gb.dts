@@ -142,9 +142,9 @@
 
 			spi0: spi@fffc8000 {
 				status = "okay";
-				cs-gpios = <0>, <&pioC 11 0>, <0>, <0>;
+				cs-gpios = <&pioC 11 GPIO_ACTIVE_HIGH>;
 				m25p40@0 {
-					compatible = "m25p40-nonjedec";
+					compatible = "st,m25p40";
 					spi-max-frequency = <1000000>;	/* Reduced speed */
 					reg = <0>;
 				};
