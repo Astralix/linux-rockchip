@@ -144,7 +144,7 @@
 				status = "okay";
 				cs-gpios = <0>, <&pioC 11 0>, <0>, <0>;
 				m25p40@0 {
-					compatible = "m25p40";
+					compatible = "m25p40-nonjedec";
 					spi-max-frequency = <1000000>;	/* Reduced speed */
 					reg = <0>;
 				};
