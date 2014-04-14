@@ -28,9 +28,7 @@
 static DEFINE_SPINLOCK(clk_lock);
 static struct clk **clk_table;
 static void __iomem *reg_base;
-
 static struct clk_onecell_data clk_data;
-
 
 void __init rockchip_clk_init(struct device_node *np, void __iomem *base,
 			      unsigned long nr_clks)
@@ -58,24 +56,51 @@ void rockchip_clk_add_lookup(struct clk *clk, unsigned int id)
 }
 
 void __init rockchip_clk_register_plls(struct rockchip_pll_clock *list,
-				unsigned int nr_pll, void __iomem *base,
-				void __iomem *reg_lock)
+				unsigned int nr_pll, void __iomem *reg_lock)
 {
-	int cnt;
+	struct clk *clk;
+	int idx;
 
-	for (cnt = 0; cnt < nr_pll; cnt++)
-		rockchip_clk_register_pll(&list[cnt], base, reg_lock, &clk_lock);
+	for (idx = 0; idx < nr_pll; idx++, list++) {
+		clk = rockchip_clk_register_pll(list, reg_base, reg_lock,
+						&clk_lock);
+		if (IS_ERR(clk)) {
+			pr_err("%s: failed to register clock %s\n", __func__,
+				list->name);
+			continue;
+		}
+
+		rockchip_clk_add_lookup(clk, list->id);
+	}
+}
+
+void __init rockchip_clk_register_armclk(unsigned int lookup_id,
+			const char *name, const char **parent_names,
+			unsigned int num_parents, void __iomem *reg_base,
+			struct device_node *np)
+{
+	struct clk *clk;
+
+	clk = rockchip_clk_register_cpuclk(name, parent_names, num_parents,
+					   reg_base, np, &clk_lock);
+	if (IS_ERR(clk)) {
+		pr_err("%s: failed to register clock %s\n", __func__,
+			name);
+		return;
+	}
+
+	rockchip_clk_add_lookup(clk, lookup_id);
 }
 
 void __init rockchip_clk_register_mux(struct rockchip_mux_clock *list,
-				      unsigned int nr_clk, void __iomem *base)
+				      unsigned int nr_clk)
 {
 	struct clk *clk;
 	unsigned int idx;
 
 	for (idx = 0; idx < nr_clk; idx++, list++) {
 		clk = clk_register_mux(NULL, list->name, list->parent_names,
-			list->num_parents, list->flags, base + list->offset,
+			list->num_parents, list->flags, reg_base + list->offset,
 			list->shift, list->width, list->mux_flags, &clk_lock);
 		if (IS_ERR(clk)) {
 			pr_err("%s: failed to register clock %s\n", __func__,
@@ -88,7 +113,7 @@ void __init rockchip_clk_register_mux(struct rockchip_mux_clock *list,
 }
 
 void __init rockchip_clk_register_div(struct rockchip_div_clock *list,
-					unsigned int nr_clk, void __iomem *base)
+					unsigned int nr_clk)
 {
 	struct clk *clk;
 	unsigned int idx;
@@ -97,14 +122,15 @@ void __init rockchip_clk_register_div(struct rockchip_div_clock *list,
 		if (list->table)
 			clk = clk_register_divider_table(NULL, list->name,
 					list->parent_name, list->flags,
-					base + list->offset, list->shift,
+					reg_base + list->offset, list->shift,
 					list->width, list->div_flags,
 					list->table, &clk_lock);
 		else
 			clk = clk_register_divider(NULL, list->name,
 					list->parent_name, list->flags,
-					base + list->offset, list->shift,
-					list->width, list->div_flags, &clk_lock);
+					reg_base + list->offset, list->shift,
+					list->width, list->div_flags,
+					&clk_lock);
 		if (IS_ERR(clk)) {
 			pr_err("%s: failed to register clock %s\n", __func__,
 				list->name);
@@ -116,7 +142,7 @@ void __init rockchip_clk_register_div(struct rockchip_div_clock *list,
 }
 
 void __init rockchip_clk_register_gate(struct rockchip_gate_clock *list,
-			       unsigned int nr_clk, void __iomem *base)
+			       unsigned int nr_clk)
 {
 	struct clk *clk;
 	unsigned int idx;
@@ -129,7 +155,7 @@ void __init rockchip_clk_register_gate(struct rockchip_gate_clock *list,
 		flags |= CLK_IGNORE_UNUSED;
 
 		clk = clk_register_gate(NULL, list->name, list->parent_name,
-				flags, base + list->offset,
+				flags, reg_base + list->offset,
 				list->bit_idx, list->gate_flags, &clk_lock);
 		if (IS_ERR(clk)) {
 			pr_err("%s: failed to register clock %s\n", __func__,

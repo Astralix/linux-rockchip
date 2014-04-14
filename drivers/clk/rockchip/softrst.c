@@ -28,7 +28,6 @@ struct rockchip_softrst {
 	spinlock_t			lock;
 };
 
-
 static int rockchip_softrst_assert(struct reset_controller_dev *rcdev,
 			      unsigned long id)
 {
@@ -109,7 +108,8 @@ void __init rockchip_register_softrst(struct device_node *np,
 	softrst->rcdev.of_node = np;
 	ret = reset_controller_register(&softrst->rcdev);
 	if (ret) {
-		pr_err("%s: could not register reset controller, %d\n", __func__, ret);
+		pr_err("%s: could not register reset controller, %d\n",
+		       __func__, ret);
 		kfree(softrst);
 	}
 };

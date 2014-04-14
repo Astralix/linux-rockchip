@@ -218,7 +218,6 @@ static int clk_divider_set_rate(struct clk_hw *hw, unsigned long rate,
 	unsigned long flags = 0;
 	u32 val;
 
-printk("%s: setting rate of %s to %lu, parent %lu\n", __func__, __clk_get_name(hw->clk), rate, parent_rate);
 	div = DIV_ROUND_UP(parent_rate, rate);
 	value = _get_val(divider, div);
 

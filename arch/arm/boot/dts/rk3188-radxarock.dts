@@ -233,9 +233,9 @@
 			status = "okay";
 
 			pinctrl-names = "default";
-			pinctrl-0 = <&emac_xfer>, <&phy_int>;
+			pinctrl-0 = <&emac_xfer>, <&emac_mdio>, <&phy_int>;
 
-			mac-address = [ 00 11 22 33 44 55 ];
+			mac-address = [ c6 ef 91 8e 60 4b ];
 			phy = <&phy0>;
 
 			phy0: ethernet-phy@0 {

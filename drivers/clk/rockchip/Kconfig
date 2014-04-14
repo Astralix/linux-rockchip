@@ -1,3 +1,0 @@
-config COMMON_CLK_ROCKCHIP
-	bool
-	select RESET_CONTROLLER

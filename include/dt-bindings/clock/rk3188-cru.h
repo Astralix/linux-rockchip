@@ -1,21 +1,33 @@
+/*
+ * Copyright (c) 2014 MundoReader S.L.
+ * Author: Heiko Stuebner <heiko@sntech.de>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
 
+/*
+ * Keep gate clock numbers sorted according to their gate and index.
+ * This also adds space in front for 31 special clocks.
+ */
+#define CLK_GATE(_reg, _bit) ((_reg + 2) * 16 + _bit)
 
-
-
-
-#define CLK_GATE(_reg, _bit) ((_reg + 1) * 16 + _bit)
-
-
+/* special clocks not ending in a gate */
 #define SCLK_ARMCLK	1
-
-
 #define SCLK_UART0	2
 #define SCLK_UART1	3
 #define SCLK_UART2	4
 #define SCLK_UART3	5
 #define SCLK_MAC	6
 
-
+/* gated clock used by peripherals */
 #define SCLK_MMC0	CLK_GATE(2, 11)
 #define SCLK_MMC1	CLK_GATE(2, 13)
 #define SCLK_MMC2	CLK_GATE(2, 14)
@@ -61,6 +73,5 @@
 #define ACLK_GPS	CLK_GATE(8, 13)
 
 #define CORE_L2C	CLK_GATE(9, 4)
-
 
 #define NR_CLKS		(CORE_L2C + 1)

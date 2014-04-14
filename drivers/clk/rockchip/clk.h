@@ -4,7 +4,7 @@
  *
  * based on
  *
- * samsung/clk.c
+ * samsung/clk.h
  * Copyright (c) 2013 Samsung Electronics Co., Ltd.
  * Copyright (c) 2013 Linaro Ltd.
  * Author: Thomas Abraham <thomas.ab@samsung.com>
@@ -28,7 +28,7 @@
 #include <linux/clk-provider.h>
 
 #define HIWORD_UPDATE(val, mask, shift) \
-		(val) << (shift) | (mask) << ((shift) + 16)
+		((val) << (shift) | (mask) << ((shift) + 16))
 
 /* register positions shared by RK2928, RK3066 and RK3188 */
 #define RK2928_PLL_CON(x)		(x * 0x4)
@@ -99,11 +99,16 @@ struct rockchip_pll_clock {
 		.rate_table	= _rtable,				\
 	}
 
-void rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk,
+struct clk *rockchip_clk_register_pll(struct rockchip_pll_clock *pll_clk,
 				void __iomem *base, void __iomem *reg_lock,
-			       spinlock_t *lock);
+				spinlock_t *lock);
 
-#define PNAME(x) static const char *x[] __initdata
+struct clk *rockchip_clk_register_cpuclk(const char *name,
+			const char **parent_names, unsigned int num_parents,
+			void __iomem *reg_base, struct device_node *np,
+			spinlock_t *lock);
+
+#define PNAME(x) static const char *x[] __initconst
 
 /**
  * struct rockchip_mux_clock: information about mux clock
@@ -209,6 +214,37 @@ struct rockchip_gate_clock {
 		.gate_flags	= gf,				\
 	}
 
+void rockchip_clk_init(struct device_node *np, void __iomem *base,
+		       unsigned long nr_clks);
+
+void rockchip_clk_add_lookup(struct clk *clk, unsigned int id);
+
+void rockchip_clk_register_mux(struct rockchip_mux_clock *clk_list,
+			       unsigned int nr_clk);
+void rockchip_clk_register_div(struct rockchip_div_clock *clk_list,
+			       unsigned int nr_clk);
+void rockchip_clk_register_gate(struct rockchip_gate_clock *clk_list,
+				unsigned int nr_clk);
+void rockchip_clk_register_plls(struct rockchip_pll_clock *pll_list,
+				unsigned int nr_pll, void __iomem *reg_lock);
+void rockchip_clk_register_armclk(unsigned int lookup_id,
+			const char *name, const char **parent_names,
+			unsigned int num_parents, void __iomem *reg_base,
+			struct device_node *np);
+
+#define ROCKCHIP_SOFTRST_HIWORD_MASK	BIT(0)
+
+#ifdef CONFIG_RESET_CONTROLLER
+void rockchip_register_softrst(struct device_node *np,
+			       unsigned int num_regs,
+			       void __iomem *base, u8 flags);
+#else
+static inline void rockchip_register_softrst(struct device_node *np,
+			       unsigned int num_regs,
+			       void __iomem *base, u8 flags)
+{
+}
+#endif
 
 /**
  * struct rockchip_clk_init_table - clock initialization table
@@ -223,32 +259,6 @@ struct rockchip_clk_init_table {
 	unsigned long	rate;
 	int		state;
 };
-
-void rockchip_clk_init(struct device_node *np, void __iomem *base,
-		       unsigned long nr_clks);
-
-void rockchip_clk_add_lookup(struct clk *clk, unsigned int id);
-
-void rockchip_clk_register_plls(struct rockchip_pll_clock *pll_list,
-				unsigned int nr_pll, void __iomem *base,
-				void __iomem *reg_lock);
-void rockchip_clk_register_mux(struct rockchip_mux_clock *clk_list,
-				unsigned int nr_clk, void __iomem *base);
-void rockchip_clk_register_div(struct rockchip_div_clock *clk_list,
-				unsigned int nr_clk, void __iomem *base);
-void rockchip_clk_register_gate(struct rockchip_gate_clock *clk_list,
-				unsigned int nr_clk, void __iomem *base);
- 
-int rockchip_clk_register_cpuclk(unsigned int lookup_id,
-		const char *name, const char **parents,
-		unsigned int num_parents, void __iomem *base,
-		struct device_node *np);
-
-#define ROCKCHIP_SOFTRST_HIWORD_MASK	BIT(0)
-
-void __init rockchip_register_softrst(struct device_node *np,
-				      unsigned int num_regs,
-				      void __iomem *base, u8 flags);
 
 void rockchip_clk_init_from_table(struct rockchip_clk_init_table *tbl,
 				  unsigned int nr_tbl);
