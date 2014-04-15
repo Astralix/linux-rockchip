@@ -127,8 +127,23 @@ static const struct ethtool_ops arc_emac_ethtool_ops = {
 	.get_settings	= arc_emac_get_settings,
 	.set_settings	= arc_emac_set_settings,
 	.get_drvinfo	= arc_emac_get_drvinfo,
-	.get_link	= ethtool_op_get_link,
+	.get_link		= ethtool_op_get_link,
+	.get_ts_info	= ethtool_op_get_ts_info,
 };
+
+static int arc_emac_ioctl(struct net_device *ndev, struct ifreq *rq, int cmd)
+{
+	struct arc_emac_priv *priv = netdev_priv(ndev);
+	struct phy_device *phydev = priv->phy_dev;
+
+	if (!netif_running(ndev))
+		return -EINVAL;
+
+	if (!phydev)
+		return -ENODEV;
+
+	return phy_mii_ioctl(phydev, rq, cmd);
+}
 
 #define FIRST_OR_LAST_MASK	(FIRST_MASK | LAST_MASK)
 
@@ -627,6 +642,10 @@ static const struct net_device_ops arc_emac_netdev_ops = {
 	.ndo_start_xmit		= arc_emac_tx,
 	.ndo_set_mac_address	= arc_emac_set_address,
 	.ndo_get_stats		= arc_emac_stats,
+	.ndo_do_ioctl		= arc_emac_ioctl,
+	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_change_mtu		= eth_change_mtu,
+	.ndo_set_mac_address	= eth_mac_addr,
 };
 
 static int arc_emac_probe(struct platform_device *pdev)
@@ -706,7 +725,6 @@ static int arc_emac_probe(struct platform_device *pdev)
 
 		clock_frequency = clk_get_rate(priv->clk);
 	}
-printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 
 	id = arc_reg_get(priv, R_ID);
 
