@@ -574,7 +574,8 @@ static int arc_emac_tx(struct sk_buff *skb, struct net_device *ndev)
 	return NETDEV_TX_OK;
 }
 
-static void arc_emac_set_address_internal(struct net_device *ndev) {
+static void arc_emac_set_address_internal(struct net_device *ndev)
+{
 	struct arc_emac_priv *priv = netdev_priv(ndev);
 	unsigned int addr_low, addr_hi;
 
@@ -584,7 +585,6 @@ static void arc_emac_set_address_internal(struct net_device *ndev) {
 	arc_reg_set(priv, R_ADDRL, addr_low);
 	arc_reg_set(priv, R_ADDRH, addr_hi);
 }
-
 
 /**
  * arc_emac_set_address - Set the MAC address for this device.
@@ -599,9 +599,7 @@ static void arc_emac_set_address_internal(struct net_device *ndev) {
  */
 static int arc_emac_set_address(struct net_device *ndev, void *p)
 {
-//	struct arc_emac_priv *priv = netdev_priv(ndev);
 	struct sockaddr *addr = p;
-//	unsigned int addr_low, addr_hi;
 
 	if (netif_running(ndev))
 		return -EBUSY;
@@ -611,11 +609,6 @@ static int arc_emac_set_address(struct net_device *ndev, void *p)
 
 	memcpy(ndev->dev_addr, addr->sa_data, ndev->addr_len);
 
-//	addr_low = le32_to_cpu(*(__le32 *) &ndev->dev_addr[0]);
-//	addr_hi = le16_to_cpu(*(__le16 *) &ndev->dev_addr[4]);
-
-//	arc_reg_set(priv, R_ADDRL, addr_low);
-//	arc_reg_set(priv, R_ADDRH, addr_hi);
 	arc_emac_set_address_internal(ndev);
 
 	return 0;
@@ -740,6 +733,7 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	else
 		eth_hw_addr_random(ndev);
 
+	arc_emac_set_address_internal(ndev);
 	dev_info(&pdev->dev, "MAC address is now %pM\n", ndev->dev_addr);
 
 	arc_emac_set_address_internal(ndev);
