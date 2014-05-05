@@ -676,7 +676,7 @@ static int arc_emac_probe(struct platform_device *pdev)
 	priv->regs = devm_ioremap_resource(&pdev->dev, &res_regs);
 	if (IS_ERR(priv->regs)) {
 		err = PTR_ERR(priv->regs);
-		goto out;
+		goto out_netdev;
 	}
 	dev_dbg(&pdev->dev, "Registers base address is 0x%p\n", priv->regs);
 
@@ -687,19 +687,17 @@ static int arc_emac_probe(struct platform_device *pdev)
 					&clock_frequency)) {
 			dev_err(&pdev->dev, "failed to retrieve <clock-frequency> from device tree\n");
 			err = -EINVAL;
-			goto out;
+			goto out_netdev;
 		}
 	} else {
 		err = clk_prepare_enable(priv->clk);
 		if (err) {
 			dev_err(&pdev->dev, "failed to enable clock\n");
-			err = -EINVAL; //goto err_clk_biu;
-			goto out;
+			goto out_clkget;
 		}
 
 		clock_frequency = clk_get_rate(priv->clk);
 	}
-printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 
 	id = arc_reg_get(priv, R_ID);
 
@@ -707,7 +705,7 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	if (!(id == 0x0005fd02 || id == 0x0007fd02)) {
 		dev_err(&pdev->dev, "ARC EMAC not detected, id=0x%x\n", id);
 		err = -ENODEV;
-		goto out;
+		goto out_clken;
 	}
 	dev_info(&pdev->dev, "ARC EMAC detected with id: 0x%x\n", id);
 
@@ -722,7 +720,7 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 			       ndev->name, ndev);
 	if (err) {
 		dev_err(&pdev->dev, "could not allocate IRQ\n");
-		goto out;
+		goto out_clken;
 	}
 
 	/* Get MAC address from device tree */
@@ -736,8 +734,6 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	arc_emac_set_address_internal(ndev);
 	dev_info(&pdev->dev, "MAC address is now %pM\n", ndev->dev_addr);
 
-	arc_emac_set_address_internal(ndev);
-
 	/* Do 1 allocation instead of 2 separate ones for Rx and Tx BD rings */
 	priv->rxbd = dmam_alloc_coherent(&pdev->dev, RX_RING_SZ + TX_RING_SZ,
 					 &priv->rxbd_dma, GFP_KERNEL);
@@ -745,7 +741,7 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	if (!priv->rxbd) {
 		dev_err(&pdev->dev, "failed to allocate data buffers\n");
 		err = -ENOMEM;
-		goto out;
+		goto out_clken;
 	}
 
 	priv->txbd = priv->rxbd + RX_BD_NUM;
@@ -757,7 +753,7 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	err = arc_mdio_probe(pdev, priv);
 	if (err) {
 		dev_err(&pdev->dev, "failed to probe MII bus\n");
-		goto out;
+		goto out_clken;
 	}
 
 	priv->phy_dev = of_phy_connect(ndev, phy_node, arc_emac_adjust_link, 0,
@@ -765,7 +761,7 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	if (!priv->phy_dev) {
 		dev_err(&pdev->dev, "of_phy_connect() failed\n");
 		err = -ENODEV;
-		goto out;
+		goto out_mdio;
 	}
 
 	dev_info(&pdev->dev, "connected to %s phy with id 0x%x\n",
@@ -777,12 +773,24 @@ printk("%s: found clock frequency of %lu\n", __func__, clock_frequency);
 	if (err) {
 		netif_napi_del(&priv->napi);
 		dev_err(&pdev->dev, "failed to register network device\n");
-		goto out;
+		goto out_netif_api;
 	}
 
 	return 0;
 
-out:
+out_netif_api:
+	netif_napi_del(&priv->napi);
+	phy_disconnect(priv->phy_dev);
+	priv->phy_dev = NULL;
+out_mdio:
+	arc_mdio_remove(priv);
+out_clken:
+	if (IS_ERR(priv->clk))
+		clk_disable_unprepare(priv->clk);
+out_clkget:
+	if (IS_ERR(priv->clk))
+		clk_put(priv->clk);
+out_netdev:
 	free_netdev(ndev);
 	return err;
 }
@@ -797,6 +805,12 @@ static int arc_emac_remove(struct platform_device *pdev)
 	arc_mdio_remove(priv);
 	unregister_netdev(ndev);
 	netif_napi_del(&priv->napi);
+
+	if (!IS_ERR(priv->clk)) {
+		clk_disable_unprepare(priv->clk);
+		clk_put(priv->clk);
+	}
+
 	free_netdev(ndev);
 
 	return 0;
