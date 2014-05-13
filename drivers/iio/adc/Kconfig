@@ -106,7 +106,7 @@ config AT91_ADC
 	  Say yes here to build support for Atmel AT91 ADC.
 
 config EXYNOS_ADC
-	bool "Exynos ADC driver support"
+	tristate "Exynos ADC driver support"
 	depends on OF
 	help
 	  Core support for the ADC block found in the Samsung EXYNOS series
@@ -114,7 +114,7 @@ config EXYNOS_ADC
 	  this resource.
 
 config LP8788_ADC
-	bool "LP8788 ADC driver"
+	tristate "LP8788 ADC driver"
 	depends on MFD_LP8788
 	help
 	  Say yes here to build support for TI LP8788 ADC.
@@ -192,6 +192,16 @@ config TI_AM335X_ADC
 	help
 	  Say yes here to build support for Texas Instruments ADC
 	  driver which is also a MFD client.
+
+config TWL4030_MADC
+	tristate "TWL4030 MADC (Monitoring A/D Converter)"
+	depends on TWL4030_CORE
+	help
+	This driver provides support for Triton TWL4030-MADC. The
+	driver supports both RT and SW conversion methods.
+
+	This driver can also be built as a module. If so, the module will be
+	called twl4030-madc.
 
 config TWL6030_GPADC
 	tristate "TWL6030 GPADC (General Purpose A/D Converter) Support"

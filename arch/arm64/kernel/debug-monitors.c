@@ -154,13 +154,17 @@ static struct notifier_block os_lock_nb = {
 
 static int debug_monitors_init(void)
 {
+	cpu_notifier_register_begin();
+
 	/* Clear the OS lock. */
 	on_each_cpu(clear_os_lock, NULL, 1);
 	isb();
 	local_dbg_enable();
 
 	/* Register hotplug handler. */
-	register_cpu_notifier(&os_lock_nb);
+	__register_cpu_notifier(&os_lock_nb);
+
+	cpu_notifier_register_done();
 	return 0;
 }
 postcore_initcall(debug_monitors_init);
@@ -313,9 +317,6 @@ static int brk_handler(unsigned long addr, unsigned int esr,
 
 	if (call_break_hook(regs, esr) == DBG_HOOK_HANDLED)
 		return 0;
-
-	pr_warn("unexpected brk exception at %lx, esr=0x%x\n",
-			(long)instruction_pointer(regs), esr);
 
 	if (!user_mode(regs))
 		return -EFAULT;
