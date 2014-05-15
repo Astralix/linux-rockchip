@@ -423,6 +423,7 @@ static struct rockchip_gate_clock rk3188_gate_clks[] __initdata = {
 
 struct rockchip_clk_init_table rk3188_clk_init_tbl[] __initdata = {
 	{ "gpll", NULL, 891000000, 0 },
+	{ "cpll", NULL, 600000000, 0 },
 
 	{ "mux_aclk_cpu", "gpll", 0, 0 },
 	{ "div_aclk_cpu", NULL, 300000000, 0 },
@@ -430,12 +431,12 @@ struct rockchip_clk_init_table rk3188_clk_init_tbl[] __initdata = {
 	{ "div_pclk_cpu", NULL,  75000000, 0 },
 	{ "div_hclk_ahb2apb", NULL, 75000000, 0 },
 
-	{ "mux_aclk_peri", "gpll", 0, 0 },
+	{ "mux_aclk_peri", "cpll", 0, 0 },
 	{ "div_aclk_peri", NULL, 150000000, 0 },
 	{ "div_hclk_peri", NULL, 150000000, 0 },
 	{ "div_pclk_peri", NULL,  75000000, 0 },
 
-	{ "div_mmc0", NULL,  75000000, 0 },
+	{ "div_mmc0", NULL,  50000000, 0 },
 
 	{ "gate_div_mac", NULL,  50000000, 0 },
 
