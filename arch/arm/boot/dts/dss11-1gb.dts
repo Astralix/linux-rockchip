@@ -143,6 +143,7 @@
 			spi0: spi@fffc8000 {
 				status = "okay";
 				cs-gpios = <&pioC 11 GPIO_ACTIVE_HIGH>;
+				
 				m25p40@0 {
 					compatible = "st,m25p40";
 					spi-max-frequency = <1000000>;	/* Reduced speed */
@@ -202,7 +203,6 @@
 			num-ports = <2>;
 			status = "okay";
 		};
-	
 	};
 
 	i2c@0 {
